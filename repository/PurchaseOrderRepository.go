@@ -235,7 +235,8 @@ func (r *PurchaseOrderRepository) GetByID(
 
 // ListReceivedMaterialItems 查询已到货的材料采购明细（用于 PI 的 Box orders 自动带出）。
 //
-// 只统计关联到指定客户订单、且已入库数量大于 0 的材料行。
+// 只统计关联到指定客户订单、且已入库数量大于 0 的材料行；
+// 同时带出采购单的来源订单，箱费行才能归到对应订单（财务按 order_id 分组）。
 func (r *PurchaseOrderRepository) ListReceivedMaterialItems(
 	ctx context.Context,
 	orderIDs []uint64,
@@ -257,7 +258,8 @@ func (r *PurchaseOrderRepository) ListReceivedMaterialItems(
 			i.id, i.purchase_order_id, i.item_type, i.item_id, i.item_code,
 			i.item_name, i.short_name, i.spec, i.unit,
 			i.required_quantity, i.quantity, i.unit_price, i.amount,
-			i.received_quantity, i.remark
+			i.received_quantity, i.remark,
+			po.source_order_id
 		FROM purchase_order_items i
 		JOIN purchase_orders po ON po.id = i.purchase_order_id
 		WHERE po.source_order_id IN (`+strings.Join(ph, ",")+`)
@@ -272,11 +274,17 @@ func (r *PurchaseOrderRepository) ListReceivedMaterialItems(
 
 	result := make([]models.PurchaseOrderItem, 0)
 	for rows.Next() {
-		it, err := scanPurchaseItem(rows)
-		if err != nil {
+		var it models.PurchaseOrderItem
+		if err := rows.Scan(
+			&it.ID, &it.PurchaseOrderID, &it.ItemType, &it.ItemID,
+			&it.ItemCode, &it.ItemName, &it.ShortName, &it.Spec, &it.Unit,
+			&it.RequiredQuantity, &it.Quantity, &it.UnitPrice,
+			&it.Amount, &it.ReceivedQuantity, &it.Remark,
+			&it.SourceOrderID,
+		); err != nil {
 			return nil, err
 		}
-		result = append(result, *it)
+		result = append(result, it)
 	}
 
 	return result, rows.Err()

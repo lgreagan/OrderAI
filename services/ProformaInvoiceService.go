@@ -207,6 +207,7 @@ func (s *ProformaInvoiceService) Generate(
 			sortOrder++
 			pi.Items = append(pi.Items, models.ProformaInvoiceItem{
 				ItemType:    models.PIItemBox,
+				OrderID:     it.SourceOrderID,
 				MaterialID:  it.ItemID,
 				ShortName:   it.ShortName,
 				Description: firstNonEmpty(it.ItemName, it.ShortName),
@@ -544,6 +545,10 @@ func (s *ProformaInvoiceService) Save(
 		}
 	}
 
+	// 箱费 / 运费等手工行常常没带订单号，先按 PI 的唯一订单补齐，
+	// 否则财务利润明细会把它们算成「未关联订单」。
+	assignMissingOrderIDs(p)
+
 	s.recalcTotals(p)
 
 	// 历史欠款不允许为负，避免抵减本期应收。
@@ -568,6 +573,42 @@ func (s *ProformaInvoiceService) Save(
 		return s.Repo.Create(ctx, p)
 	}
 	return s.Repo.Update(ctx, p)
+}
+
+// assignMissingOrderIDs 给缺订单号的明细行补上归属。
+//
+// 财务利润明细按 order_id 分组，箱费、运费、手工加的明细行缺 order_id 就会单独
+// 落到「未关联订单」。PI 只对应一个客户订单时（绝大多数情况），缺省行一律归到该订单；
+// 跨多个订单的 PI 不猜，保持为空。
+func assignMissingOrderIDs(p *models.ProformaInvoice) {
+	var orderID uint64
+	multiple := false
+
+	for i := range p.Items {
+		it := &p.Items[i]
+		if it.OrderID == nil || *it.OrderID == 0 {
+			continue
+		}
+		if orderID == 0 {
+			orderID = *it.OrderID
+			continue
+		}
+		if *it.OrderID != orderID {
+			multiple = true
+			break
+		}
+	}
+
+	if orderID == 0 || multiple {
+		return
+	}
+
+	for i := range p.Items {
+		it := &p.Items[i]
+		if it.OrderID == nil || *it.OrderID == 0 {
+			it.OrderID = uint64Ptr(orderID)
+		}
+	}
 }
 
 // recalcTotals 依据明细重算各项合计（Paid 行不计入金额）。

@@ -60,6 +60,9 @@ type PurchaseOrderItem struct {
 	Amount           float64 `json:"amount"`
 	ReceivedQuantity float64 `json:"received_quantity"`
 	Remark           string  `json:"remark"`
+	// SourceOrderID 采购单关联的客户订单，PI 带出箱费行时据此归属到订单
+	// （财务利润明细按 order_id 分组，缺了它箱费会落到「未关联订单」）。
+	SourceOrderID *uint64 `json:"source_order_id"`
 }
 
 // PurchaseOrderListItem 采购单列表项。

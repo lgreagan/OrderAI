@@ -28,6 +28,9 @@
 - 包材箱数一律「产品数量 ÷ 整数每箱数量」再 ceil，**不要用「数量 × 1/每箱」**：
   BOM 只存 6 位小数（1/642 → 0.001558），乘回去 1.0002 会凭空多一只纸箱。
 - 发货单库存错账可用 `go run ./tmpinspect/recalc <发货单ID>` 重算（幂等，先清该单流水再建）。
+- PI 明细行必须带 `order_id`：财务报表 `OrderRows` 只取 `order_id IS NOT NULL` 的行，
+  缺了会单独落成「未关联订单」。箱费行来自 `ListReceivedMaterialItems`（带 `po.source_order_id`），
+  手工加的行由 `assignMissingOrderIDs` 在保存时按 PI 的唯一订单补齐。
 
 ## 环境
 - C 盘长期只剩约 2G（99%），`go build` 报 ENOSPC 时先 `go clean -cache`。
