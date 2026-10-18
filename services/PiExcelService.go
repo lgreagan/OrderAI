@@ -237,11 +237,9 @@ func issuedDateValue(t time.Time) int {
 	return value
 }
 
-func setCellFormula(f *excelize.File, sheet, cell, formula string) error {
-	return f.SetCellFormula(sheet, cell, formula)
-}
-
-func strPtr(s string) *string { return &s }
+// 说明：PI 导出的金额列一律写数值，不用 Excel 公式。
+// 早期版本写 "=IF(...)"，excelize 会把前导等号一起写进 <f> 节点
+// （<f>=IF(...)</f>），Excel 打开后金额列不计算、显示空白或 0。
 
 // writePIBody 按分组写明细、小计、箱费、费用汇总与库存说明。
 func writePIBody(
@@ -280,8 +278,8 @@ func writePIBody(
 		f.SetCellValue(sheet, cellRef(row, 1), "Quantity/Item Cost")
 		f.SetCellValue(sheet, cellRef(row, 7), subQty)
 
-		subFormula := fmt.Sprintf("=SUMPRODUCT(H%d:H%d)", groupStartRow, groupEndRow)
-		_ = setCellFormula(f, sheet, cellRef(row, 8), subFormula)
+		// 小计直接写数值：不依赖 Excel 打开时重算公式。
+		f.SetCellValue(sheet, cellRef(row, 8), round2(subAmount))
 
 		styleRow(f, sheet, row, st.subtotalText)
 		f.SetCellStyle(sheet, cellRef(row, 7), cellRef(row, 7), st.subtotalQty)
@@ -405,16 +403,13 @@ func writePIItemRow(
 	// G 列 Quantity
 	f.SetCellValue(sheet, cellRef(row, 7), it.Quantity)
 
-	// H 列 Amount
+	// H 列 Amount：直接写数值。
+	// 之前写 "=IF(...)" 公式，excelize 会把等号一起写进 <f>，Excel 打开后
+	// 金额列算不出来（显示 0/空白），因此改为写算好的金额。
 	if it.IsPaid {
 		f.SetCellValue(sheet, cellRef(row, 8), "Paid")
 	} else {
-		if it.UnitPrice > 0 {
-			formula := fmt.Sprintf("=IF(F%d=\"\",0,F%d*G%d)", row, row, row)
-			_ = setCellFormula(f, sheet, cellRef(row, 8), formula)
-		} else {
-			_ = f.SetCellValue(sheet, cellRef(row, 8), it.Amount)
-		}
+		f.SetCellValue(sheet, cellRef(row, 8), it.Amount)
 	}
 
 	// J 列隐藏辅助标记
