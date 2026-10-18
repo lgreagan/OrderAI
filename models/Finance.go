@@ -178,6 +178,18 @@ type FinanceShipmentCost struct {
 	InsuranceUSD float64 `json:"insurance_usd"`
 }
 
+// FinanceShipmentCharge 单张发货单录入的运费/保险原值（币种 = 发货单 currency）。
+//
+// 报表要和 PI 的「向客户收取」同口径比较，必须在 Go 侧逐单折算：
+// 每张发货单可能币种不同、跨月汇率也不同，SQL 里直接 SUM 会把人民币和美元加在一起。
+type FinanceShipmentCharge struct {
+	OrderID       uint64      `json:"order_id"`
+	Currency      string      `json:"currency"`
+	ShipDate      Date        `json:"ship_date"`
+	FreightCost   float64     `json:"freight_cost"`
+	InsuranceCost float64     `json:"insurance_cost"`
+}
+
 // FinanceReport 财务报表数据。
 type FinanceReport struct {
 	Rows    []FinanceOrderRow   `json:"rows"`

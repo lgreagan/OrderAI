@@ -283,29 +283,37 @@ func (r *FinanceRepository) PurchasedItemByOrder(
 	return result, rows.Err()
 }
 
-// ShipmentCosts 按订单汇总发货单实际支付的运费与保险。
-func (r *FinanceRepository) ShipmentCosts(
+// ShipmentCharges 逐单取出发货单录入的运费与保险（保留币种与发货日期）。
+//
+// 不在这里 SUM：不同发货单的币种可能不同，人民币单要先按当月汇率折算成美元，
+// 再和 PI 的「向客户收取」比较，否则会出现假的代收代付差额。
+func (r *FinanceRepository) ShipmentCharges(
 	ctx context.Context,
-) (map[uint64]models.FinanceShipmentCost, error) {
+) ([]models.FinanceShipmentCharge, error) {
 	rows, err := r.DB.QueryContext(ctx, `
 		SELECT
 			order_id,
-			COALESCE(SUM(freight_cost), 0),
-			COALESCE(SUM(insurance_cost), 0)
+			COALESCE(currency, ''),
+			ship_date,
+			COALESCE(freight_cost, 0),
+			COALESCE(insurance_cost, 0)
 		FROM shipments
-		GROUP BY order_id`)
+		WHERE order_id IS NOT NULL
+		ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	result := map[uint64]models.FinanceShipmentCost{}
+	result := make([]models.FinanceShipmentCharge, 0)
 	for rows.Next() {
-		var it models.FinanceShipmentCost
-		if err := rows.Scan(&it.OrderID, &it.FreightUSD, &it.InsuranceUSD); err != nil {
+		var it models.FinanceShipmentCharge
+		if err := rows.Scan(
+			&it.OrderID, &it.Currency, &it.ShipDate, &it.FreightCost, &it.InsuranceCost,
+		); err != nil {
 			return nil, err
 		}
-		result[it.OrderID] = it
+		result = append(result, it)
 	}
 
 	return result, rows.Err()

@@ -497,7 +497,7 @@ func (s *ProformaInvoiceService) chargeAmountInPI(
 	if amount <= 0 {
 		return 0
 	}
-	if !strings.EqualFold(strings.TrimSpace(sh.Currency), "CNY") {
+	if !isCNY(sh.Currency) {
 		return amount
 	}
 

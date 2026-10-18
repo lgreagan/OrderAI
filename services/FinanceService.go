@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"OrderAI/models"
 	"OrderAI/repository"
@@ -57,10 +58,11 @@ func (s *FinanceService) Report(
 	if err != nil {
 		return nil, err
 	}
-	shipmentCosts, err := s.Repo.ShipmentCosts(ctx)
+	shipmentCharges, err := s.Repo.ShipmentCharges(ctx)
 	if err != nil {
 		return nil, err
 	}
+	shipmentCosts := convertShipmentCharges(shipmentCharges, defaultRate, monthRates)
 	piSummary, err := s.Repo.PISummary(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -93,6 +95,51 @@ func (s *FinanceService) Report(
 		Summary:   summarize(rows, defaultRate, piSummary),
 		Shortages: buildShortages(rows, shipped, purchased),
 	}, nil
+}
+
+// convertShipmentCharges 把各发货单录入的运费/保险折算成美元并按订单汇总。
+//
+// 与 PI 侧口径对齐：PI 里的运费/保险行是「发货单金额 ÷ 签发月汇率」带过来的，
+// 归属栏里的「发货实付」必须同样折成美元，否则币种是人民币的发货单会凭空产生差额。
+// 折算汇率取发货日期所在月份（该月未维护则回落到默认汇率），空币种按美元处理。
+func convertShipmentCharges(
+	charges []models.FinanceShipmentCharge,
+	defaultRate float64,
+	monthRates map[string]float64,
+) map[uint64]models.FinanceShipmentCost {
+	result := map[uint64]models.FinanceShipmentCost{}
+
+	for _, c := range charges {
+		rate := 1.0
+		if isCNY(c.Currency) {
+			if r, _ := resolveRate(c.ShipDate, monthRates, defaultRate); r > 0 {
+				rate = r
+			}
+		}
+
+		it := result[c.OrderID]
+		it.OrderID = c.OrderID
+		it.FreightUSD += c.FreightCost / rate
+		it.InsuranceUSD += c.InsuranceCost / rate
+		result[c.OrderID] = it
+	}
+
+	for id, it := range result {
+		it.FreightUSD = round2(it.FreightUSD)
+		it.InsuranceUSD = round2(it.InsuranceUSD)
+		result[id] = it
+	}
+
+	return result
+}
+
+// isCNY 判断发货单币种是否为人民币（录入值可能是 CNY / RMB / ¥ 等写法）。
+func isCNY(currency string) bool {
+	switch strings.ToUpper(strings.TrimSpace(currency)) {
+	case "CNY", "RMB", "CNH", "¥", "￥", "人民币":
+		return true
+	}
+	return false
 }
 
 // resolveRate 取某行签发月份的汇率；该月未维护月度汇率时回落到默认汇率并标记。
