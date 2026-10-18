@@ -53,7 +53,7 @@
 | 分组标题 `UK142 (18ctns) ship by fastest truck` | **自动填** | `{order_number} ({箱数}ctns) {shipping_method}` |
 | 明细行 `V1-8cm bluex64pcs (64pcs/ctn, 1ctn)` \| 单价 \| 数量 \| 金额 | **自动填**（来自发货明细 + 产品简称）| 见 §6.3 |
 | 分组小计 `Quantity/Item Cost` | **自动算** | 分组数量/金额合计 |
-| `Box orders`（箱费行）| **自动填**（来自材料）；明细里没有箱费行时，编辑界面默认补一行 `box cost`（数量 = 总箱数，单价可改，金额 = 数量 × 单价 只读）| `materials` 采购/印刷 |
+| `Box orders`（箱费行）| **自动填**（来自材料）；明细里没有箱费行时，编辑界面默认补一行 `box cost`（数量 = 总箱数，单价可改，金额 = 数量 × 单价 只读）。**纸箱采购价是人民币，生成时按签发月份汇率折算成美元单价**（2026-10-18）| `materials` 采购/印刷 |
 | `Box and item in Stock` 文本块 | **自动草稿 + 留空可改** | 由库存汇总生成，缺的留空 |
 | `Insurance Cost` / `Shipping cost ...` | **自动填**（来自发货单费用）| 见 §4.4 |
 | `Amount` | **自动算** | 货款+箱费+保险+运费 |
@@ -183,7 +183,8 @@ CREATE TABLE shipment_items (
 
 1. **发货费用**：`shipments.freight_cost` / `shipments.insurance_cost`（每批一段）→ PI 的运费/保险行。
 2. **其它费用行**：`proforma_invoice_charges`（见 §4.6）承载保险、运费、以及"其它"的手工费用行。
-3. **箱费**：来自 `materials.price × 数量`（见 §6.3），落到 PI 的 `Box orders` 段。
+3. **箱费**：来自 `materials.price（人民币/箱） ÷ 汇率 × 数量`（见 §6.3），落到 PI 的 `Box orders` 段；
+   汇率取 PI 签发月份的月度汇率（`exchange_rate_yyyy-MM`），该月未维护时用默认汇率 `exchange_rate`。
 
 ### 4.5 库存台账（支撑"当前库存 / 已发货量"）
 
@@ -449,6 +450,7 @@ CREATE TABLE proforma_invoice_items (
             amount = price×qty；is_paid → "Paid"
   ③ 箱费行：本期材料(包材)采购/印刷 → "Box orders"；明细里没有箱费行时，编辑界面默认补一行 "box cost"
             （数量 = 分组标题箱数合计，单价可编辑，金额 = 数量 × 单价，不可编辑）
+            单价 = 材料人民币价 ÷ 汇率（签发月份月度汇率，缺省用默认汇率），保留 2 位小数
   ④ 费用行：每张发货单 → 运费 "Shipping cost by fast truck for {单号} for {ctns}ctns"、保险
   ⑤ 库存说明：v_inventory_stock 自动生成 left/used/will leave 草稿 → stock_note(可留空/改)
   ⑥ 合计：货款+箱费+保险+运费 = amount

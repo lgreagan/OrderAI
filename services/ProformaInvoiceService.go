@@ -222,6 +222,9 @@ func (s *ProformaInvoiceService) Generate(
 	// 单价兜底：发货/采购明细没带价格时，按产品主数据补全（货款取 skus.price_usd）。
 	s.fillItemPrices(ctx, pi)
 
+	// 箱费：材料单价是人民币，按签发月份汇率折算成 PI 外币单价。
+	s.convertBoxCostToUSD(ctx, pi)
+
 	s.recalcTotals(pi)
 
 	// 历史欠款 = 该客户历史 PI 本期合计 − 历史收款（收款超过开票额时按 0 计）。
