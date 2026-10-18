@@ -1,5 +1,20 @@
 {{define "content"}}
 <style>
+    /* 图表卡片整块换页，避免打印时被切成两半 */
+    .chart-card {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    .chart-box {
+        position: relative;
+        height: 280px;
+    }
+
+    .chart-box.tall {
+        height: 300px;
+    }
+
     @media print {
         .sidebar,
         .topbar,
@@ -69,6 +84,57 @@
     <div id="messageArea"></div>
 
     <div class="row g-3 mb-3" id="cardRow"></div>
+
+    <!-- 图表看板：数据来自同一个报表接口，筛选后同步重绘 -->
+    <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+            <div class="card border-0 shadow-sm h-100 chart-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-baseline mb-2">
+                        <h6 class="mb-0">月度收入 · 成本 · 毛利</h6>
+                        <div class="text-secondary small">柱 = 金额（万元），线 = 毛利率</div>
+                    </div>
+                    <div class="chart-box"><canvas id="chartMonthly"></canvas></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4">
+            <div class="card border-0 shadow-sm h-100 chart-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-baseline mb-2">
+                        <h6 class="mb-0">收入构成</h6>
+                        <div class="text-secondary small">USD</div>
+                    </div>
+                    <div class="chart-box"><canvas id="chartRevenue"></canvas></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-xl-6">
+            <div class="card border-0 shadow-sm h-100 chart-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-baseline mb-2">
+                        <h6 class="mb-0">订单毛利率对比</h6>
+                        <div class="text-secondary small">标准成本口径 vs 实际采购口径</div>
+                    </div>
+                    <div class="chart-box"><canvas id="chartMargin"></canvas></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-6">
+            <div class="card border-0 shadow-sm h-100 chart-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-baseline mb-2">
+                        <h6 class="mb-0">运费 / 保险 代收代付</h6>
+                        <div class="text-secondary small">USD，按订单</div>
+                    </div>
+                    <div class="chart-box"><canvas id="chartPass"></canvas></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-body">
@@ -200,6 +266,7 @@
     </div>
 </div>
 
+<script src="/web/js/vendor/chart.umd.min.js"></script>
 <script>
     $(function () {
         function esc(value) {
@@ -478,6 +545,309 @@
             }).join(''));
         }
 
+        // ============ 图表看板 ============
+        // 数据全部来自同一个 /api/finance/report，筛选后整块重绘。
+        const CHART_COLORS = {
+            revenue: 'rgba(59, 111, 245, .85)',
+            cost: 'rgba(242, 160, 61, .85)',
+            margin: '#2fb67c',
+            border: 'rgba(59, 111, 245, 1)'
+        };
+        const PIE_COLORS = ['#3b6ff5', '#f2a03d', '#8b6cf0', '#2fb67c'];
+        const charts = {};
+
+        function destroyCharts() {
+            Object.keys(charts).forEach(key => {
+                charts[key].destroy();
+                delete charts[key];
+            });
+        }
+
+        // 没有数据时把画布换成占位文案，避免出现空白坐标轴。
+        function toggleChartPlaceholder(id, hasData) {
+            const canvas = document.getElementById(id);
+            if (!canvas) return;
+            const $canvas = $(canvas);
+            if (hasData) {
+                $canvas.show().siblings('.chart-empty').remove();
+                return;
+            }
+            $canvas.hide();
+            if (!$canvas.siblings('.chart-empty').length) {
+                $canvas.after('<div class="chart-empty text-center text-secondary py-5">暂无数据</div>');
+            }
+        }
+
+        function baseLegend() {
+            return {
+                position: 'bottom',
+                labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: 'rectRounded', padding: 14 }
+            };
+        }
+
+        function baseTooltip(render) {
+            return {
+                padding: 10,
+                cornerRadius: 6,
+                callbacks: { label: render }
+            };
+        }
+
+        function wan(value) { return Number(value || 0) / 10000; }
+
+        function monthLabel(month) {
+            return month ? month.slice(2).replace('-', '/') : '未填日期';
+        }
+
+        // 图一：月度收入/成本柱 + 毛利率折线（双轴）
+        function drawMonthly(list) {
+            toggleChartPlaceholder('chartMonthly', list.length > 0);
+            if (!list.length) return;
+
+            charts.monthly = new Chart(document.getElementById('chartMonthly'), {
+                type: 'bar',
+                data: {
+                    labels: list.map(m => monthLabel(m.month)),
+                    datasets: [
+                        {
+                            label: '收入',
+                            data: list.map(m => wan(m.revenue_cny)),
+                            backgroundColor: CHART_COLORS.revenue,
+                            borderRadius: 4,
+                            maxBarThickness: 38,
+                            order: 2
+                        },
+                        {
+                            label: '标准成本',
+                            data: list.map(m => wan(m.std_cost_cny)),
+                            backgroundColor: CHART_COLORS.cost,
+                            borderRadius: 4,
+                            maxBarThickness: 38,
+                            order: 2
+                        },
+                        {
+                            label: '毛利率',
+                            type: 'line',
+                            yAxisID: 'y1',
+                            data: list.map(m => Number(m.margin_std || 0) * 100),
+                            borderColor: CHART_COLORS.margin,
+                            backgroundColor: CHART_COLORS.margin,
+                            borderWidth: 2,
+                            pointRadius: 4,
+                            tension: .3,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: baseLegend(),
+                        tooltip: baseTooltip(ctx => {
+                            if (ctx.dataset.yAxisID === 'y1') {
+                                return `毛利率 ${Number(ctx.parsed.y || 0).toFixed(1)}%`;
+                            }
+                            return `${ctx.dataset.label} ¥${money(ctx.parsed.y * 10000)}`;
+                        })
+                    },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { maxRotation: 0 } },
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: '万元' },
+                            grid: { color: 'rgba(0,0,0,.06)' },
+                            ticks: { callback: v => num(v, 0) }
+                        },
+                        y1: {
+                            position: 'right',
+                            beginAtZero: true,
+                            suggestedMax: 60,
+                            title: { display: true, text: '毛利率 %' },
+                            grid: { drawOnChartArea: false },
+                            ticks: { callback: v => v + '%' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 图二：收入构成环形图（货款/箱费/运费/保险，USD）
+        function drawRevenue(rows) {
+            const sum = key => rows.reduce((acc, r) => acc + Number(r[key] || 0), 0);
+            const parts = [
+                { label: '货款', value: sum('goods_usd') },
+                { label: '箱费', value: sum('box_usd') },
+                { label: '运费', value: sum('freight_usd') },
+                { label: '保险', value: sum('insurance_usd') }
+            ];
+            const visible = parts.filter(p => p.value > 0);
+            toggleChartPlaceholder('chartRevenue', visible.length > 0);
+            if (!visible.length) return;
+
+            charts.revenue = new Chart(document.getElementById('chartRevenue'), {
+                type: 'doughnut',
+                data: {
+                    labels: visible.map(p => p.label),
+                    datasets: [{
+                        data: visible.map(p => p.value),
+                        backgroundColor: PIE_COLORS,
+                        borderColor: '#fff',
+                        borderWidth: 2,
+                        hoverOffset: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '58%',
+                    plugins: {
+                        legend: baseLegend(),
+                        tooltip: baseTooltip(ctx => {
+                            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                            const share = total > 0 ? (ctx.parsed / total) * 100 : 0;
+                            return `${ctx.label} $${money(ctx.parsed)}（${share.toFixed(1)}%）`;
+                        })
+                    }
+                }
+            });
+        }
+
+        // 图三：订单毛利率横向对比（标准 vs 实际），按收入从大到小取前 8 单
+        function drawMargin(rows) {
+            const list = rows
+                .filter(r => Number(r.revenue_cny || 0) > 0)
+                .slice()
+                .sort((a, b) => Number(b.revenue_cny || 0) - Number(a.revenue_cny || 0))
+                .slice(0, 8)
+                .reverse();
+
+            toggleChartPlaceholder('chartMargin', list.length > 0);
+            if (!list.length) return;
+
+            const label = r => r.order_id
+                ? (r.order_number || ('#' + r.order_id))
+                : (splitList(r.pi_numbers)[0] || '未关联订单');
+
+            charts.margin = new Chart(document.getElementById('chartMargin'), {
+                type: 'bar',
+                data: {
+                    labels: list.map(label),
+                    datasets: [
+                        {
+                            label: '毛利率（标准成本）',
+                            data: list.map(r => Number(r.margin_std || 0) * 100),
+                            backgroundColor: 'rgba(59, 111, 245, .85)',
+                            borderRadius: 4,
+                            maxBarThickness: 16
+                        },
+                        {
+                            label: '毛利率（实际采购）',
+                            data: list.map(r => actualFallback(r) ? null : Number(r.margin_actual || 0) * 100),
+                            backgroundColor: 'rgba(47, 182, 124, .85)',
+                            borderRadius: 4,
+                            maxBarThickness: 16
+                        }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: baseLegend(),
+                        tooltip: baseTooltip(ctx => {
+                            if (ctx.parsed.x === null) return '';
+                            return `${ctx.dataset.label} ${Number(ctx.parsed.x).toFixed(1)}%`;
+                        })
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(0,0,0,.06)' },
+                            ticks: { callback: v => v + '%' }
+                        },
+                        y: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // 图四：运费/保险 代收代付（收取 vs 实付，USD）
+        function drawPass(rows) {
+            const list = rows.filter(r => Number(r.freight_usd || 0) !== 0
+                || Number(r.insurance_usd || 0) !== 0
+                || Number(r.ship_freight_usd || 0) !== 0
+                || Number(r.ship_insurance_usd || 0) !== 0);
+
+            toggleChartPlaceholder('chartPass', list.length > 0);
+            if (!list.length) return;
+
+            const label = r => r.order_id
+                ? (r.order_number || ('#' + r.order_id))
+                : (splitList(r.pi_numbers)[0] || '未关联订单');
+
+            charts.pass = new Chart(document.getElementById('chartPass'), {
+                type: 'bar',
+                data: {
+                    labels: list.map(label),
+                    datasets: [
+                        {
+                            label: '向客户收取',
+                            data: list.map(r => Number(r.freight_usd || 0) + Number(r.insurance_usd || 0)),
+                            backgroundColor: 'rgba(59, 111, 245, .85)',
+                            borderRadius: 4,
+                            maxBarThickness: 34
+                        },
+                        {
+                            label: '发货实付',
+                            data: list.map(r => Number(r.ship_freight_usd || 0) + Number(r.ship_insurance_usd || 0)),
+                            backgroundColor: 'rgba(242, 160, 61, .85)',
+                            borderRadius: 4,
+                            maxBarThickness: 34
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: baseLegend(),
+                        tooltip: baseTooltip(ctx => `${ctx.dataset.label} $${money(ctx.parsed.y)}`)
+                    },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: v => '$' + num(v, 0) },
+                            grid: { color: 'rgba(0,0,0,.06)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderCharts(rows, monthly) {
+            if (typeof Chart === 'undefined') {
+                $('#chartMonthly,#chartRevenue,#chartMargin,#chartPass').each(function () {
+                    toggleChartPlaceholder(this.id, false);
+                });
+                return;
+            }
+
+            Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+            Chart.defaults.color = '#6b7280';
+
+            destroyCharts();
+            drawMonthly(monthly);
+            drawRevenue(rows);
+            drawMargin(rows);
+            drawPass(rows);
+        }
+
         async function load() {
             $('#messageArea').empty();
             try {
@@ -490,6 +860,7 @@
 
                 renderRateNotice(summary);
                 renderCards(summary);
+                renderCharts(rows, data.monthly || []);
                 renderProfit(rows, summary);
                 renderMonthly(data.monthly || []);
                 renderPassThrough(rows);
