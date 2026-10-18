@@ -120,6 +120,7 @@ func main() {
 		inventoryService,
 		settingsService,
 		materialRequirementService,
+		purchaseDemandRepo,
 	)
 	proformaInvoiceService := services.NewProformaInvoiceService(
 		proformaInvoiceRepo,

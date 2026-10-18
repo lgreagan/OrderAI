@@ -51,8 +51,12 @@ type MaterialRequirement struct {
 }
 
 // ShipmentPackagingItem 发货明细中的产品数量，用于核算随货消耗的包装材料。
+//
+// RuleID 非空表示这一行是组合套装（数量 = 套数），按组合箱规核销；
+// SkuID 用于单品直配行（数量 = 个数），按单品箱规核销。
 type ShipmentPackagingItem struct {
 	SkuID    uint64  `json:"sku_id"`
+	RuleID   uint64  `json:"rule_id"`
 	Quantity float64 `json:"quantity"`
 }
 

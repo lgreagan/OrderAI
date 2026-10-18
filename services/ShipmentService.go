@@ -19,6 +19,9 @@ type ShipmentService struct {
 	Settings  *SettingsService
 	// Requirements 用于发货时按 BOM 自动核销包装材料（可为 nil，则跳过核销）。
 	Requirements *MaterialRequirementService
+	// Demand 提供订单行级需求，用于按订单行口径核销纸箱（组合行用组合箱）。
+	// 为 nil 时退回按 SKU 汇总的单品箱规。
+	Demand *repository.PurchaseDemandRepository
 }
 
 func NewShipmentService(
@@ -26,12 +29,14 @@ func NewShipmentService(
 	inventory *InventoryService,
 	settings *SettingsService,
 	requirements *MaterialRequirementService,
+	demand *repository.PurchaseDemandRepository,
 ) *ShipmentService {
 	return &ShipmentService{
 		Repo:         repo,
 		Inventory:    inventory,
 		Settings:     settings,
 		Requirements: requirements,
+		Demand:       demand,
 	}
 }
 
@@ -395,6 +400,8 @@ func (s *ShipmentService) Save(
 // PackagingNeeds 核算本次发货将随货消耗的包装材料（只读预览，不写库存）。
 //
 // 供发货单界面在保存前展示"本单会扣掉多少纸箱"，避免库存被静默调整。
+// 口径与保存时一致：组合套装行带 rule_id（数量按套），按组合箱规算；
+// 单品行带 sku_id（数量按个），按单品箱规算。
 func (s *ShipmentService) PackagingNeeds(
 	ctx context.Context,
 	req *models.ShipmentPackagingRequest,
@@ -406,7 +413,18 @@ func (s *ShipmentService) PackagingNeeds(
 	products := make([]MaterialProduct, 0, len(req.Items))
 	for i := range req.Items {
 		it := &req.Items[i]
-		if it.SkuID == 0 || it.Quantity <= 0 {
+		if it.Quantity <= 0 {
+			continue
+		}
+		if it.RuleID != 0 {
+			products = append(products, MaterialProduct{
+				ProductType: models.ProductionProductRule,
+				RefID:       it.RuleID,
+				Quantity:    it.Quantity,
+			})
+			continue
+		}
+		if it.SkuID == 0 {
 			continue
 		}
 		products = append(products, MaterialProduct{
@@ -483,6 +501,10 @@ func (s *ShipmentService) syncInventory(
 // 1000pcs（144/箱，整单 7 箱）拆成 500+500 两批会各按 4 箱核销、共扣 8 箱。
 // 因此这里按该订单全部已发货数量算出总箱数，再减去同一订单其它发货单已核销的量，只补差额。
 //
+// 折算口径与采购一致，按**订单行**取产品：组合行按套数走组合箱，单品行按个数走单品箱。
+// 只按 SKU 汇总会把组合行拆成单品行 —— 同一 SKU 既在单品行又在组合行时按单品箱规多扣，
+// 组合箱则一直入库、从未出库（历史错账就是这么来的）。
+//
 // 注意：包材只在这一处出库。生产领料页面不应再领包材，否则同一只纸箱会被扣两次。
 func (s *ShipmentService) syncPackagingConsumption(
 	ctx context.Context,
@@ -502,8 +524,11 @@ func (s *ShipmentService) syncPackagingConsumption(
 		}
 	}
 
-	// 汇总该订单下所有「已发货/已签收」单（含本单）的发货数量，并记下其它单的 ID。
-	cumulative := make(map[uint64]float64)
+	// 汇总该订单下所有「已发货/已签收」单（含本单）的明细，按**订单行**归集：
+	// 组合行用组合箱、单品行用单品箱，纸箱核销口径必须与采购一致。
+	// 没有订单行号的历史明细单独记，最后按单品箱规兜底。
+	shippedByItem := make(map[uint64]map[uint64]float64)
+	looseBySKU := make(map[uint64]float64)
 	otherShipmentIDs := make([]uint64, 0)
 
 	orders, err := s.Repo.ListByOrderIDs(ctx, []uint64{ship.OrderID})
@@ -524,21 +549,30 @@ func (s *ShipmentService) syncPackagingConsumption(
 			if it.SkuID == nil || it.Quantity <= 0 {
 				continue
 			}
-			cumulative[*it.SkuID] += it.Quantity
+			if it.OrderItemID != nil && *it.OrderItemID > 0 {
+				bucket := shippedByItem[*it.OrderItemID]
+				if bucket == nil {
+					bucket = make(map[uint64]float64)
+					shippedByItem[*it.OrderItemID] = bucket
+				}
+				bucket[*it.SkuID] += it.Quantity
+				continue
+			}
+			looseBySKU[*it.SkuID] += it.Quantity
 		}
 	}
 
-	if len(cumulative) == 0 {
+	if len(shippedByItem) == 0 && len(looseBySKU) == 0 {
 		return nil
 	}
 
-	products := make([]MaterialProduct, 0, len(cumulative))
-	for skuID, qty := range cumulative {
-		products = append(products, MaterialProduct{
-			ProductType: models.ProductionProductSku,
-			RefID:       skuID,
-			Quantity:    qty,
-		})
+	// 按订单行口径折算（组合行 = 套数 / 组合箱，单品行 = 个数 / 单品箱）。
+	products, err := s.packagingProducts(ctx, ship.OrderID, shippedByItem, looseBySKU)
+	if err != nil {
+		return err
+	}
+	if len(products) == 0 {
+		return nil
 	}
 
 	needs, err := s.Requirements.PackagingNeeds(ctx, products)
@@ -579,4 +613,123 @@ func (s *ShipmentService) syncPackagingConsumption(
 	}
 
 	return nil
+}
+
+// packagingProducts 按订单行口径折算「已发货部分」的产品行。
+//
+// 组合行折算成规则（套数），单品行折算成 SKU（个数），与采购侧 orderLineProducts 一致；
+// 同一材料跨行在 PackagingNeeds 中汇总后向上取整，同一箱型可以混装，不会重复多算。
+//
+// 发货明细自带 order_item_id，因此直接按订单行归集，不需要按比例分摊：
+//   - 单品行：该行该 SKU 的累计已发数量即个数；
+//   - 组合行：成员「已发 ÷ 每套用量」取最小值 = 已发套数，凑不成套的部分不核销组合箱。
+//
+// 没有订单行号的历史明细（手工添加等）按单品箱规兜底。
+func (s *ShipmentService) packagingProducts(
+	ctx context.Context,
+	orderID uint64,
+	shippedByItem map[uint64]map[uint64]float64,
+	looseBySKU map[uint64]float64,
+) ([]MaterialProduct, error) {
+	products := make([]MaterialProduct, 0, len(shippedByItem)+len(looseBySKU))
+
+	if s.Demand != nil && orderID != 0 && len(shippedByItem) > 0 {
+		lines, err := s.Demand.ListOrderLineDemand(ctx, orderID)
+		if err != nil {
+			return nil, err
+		}
+
+		type rowInfo struct {
+			kind string
+			ref  uint64
+			qps  float64
+			name string
+			skus []uint64
+		}
+
+		rows := make(map[uint64]*rowInfo, len(lines))
+		seq := make([]uint64, 0, len(lines))
+		for _, l := range lines {
+			if l.SkuID == 0 {
+				continue
+			}
+			ri := rows[l.OrderItemID]
+			if ri == nil {
+				kind, ref, qps, name := models.ProductionProductSku, l.SkuID, 1.0, ""
+				if l.RuleID != 0 {
+					kind, ref, name = models.ProductionProductRule, l.RuleID, l.RuleNameZH
+					if l.QuantityPerSet > 0 {
+						qps = l.QuantityPerSet
+					}
+				}
+				ri = &rowInfo{kind: kind, ref: ref, qps: qps, name: name}
+				rows[l.OrderItemID] = ri
+				seq = append(seq, l.OrderItemID)
+			}
+			ri.skus = append(ri.skus, l.SkuID)
+		}
+
+		for _, itemID := range seq {
+			ri := rows[itemID]
+			bucket := shippedByItem[itemID]
+
+			qty := 0.0
+			if ri.kind == models.ProductionProductRule {
+				first := true
+				for _, skuID := range ri.skus {
+					v := bucket[skuID]
+					if ri.qps > 0 {
+						v /= ri.qps
+					}
+					if first || v < qty {
+						qty = v
+						first = false
+					}
+				}
+			} else if len(ri.skus) > 0 {
+				qty = bucket[ri.skus[0]]
+			}
+
+			if qty <= 0 {
+				continue
+			}
+			products = append(products, MaterialProduct{
+				ProductType: ri.kind,
+				RefID:       ri.ref,
+				ProductName: ri.name,
+				Quantity:    round3(qty),
+			})
+		}
+	}
+
+	// 订单里查不到行号（历史数据 / 手工加行）的明细，只能按 SKU 单品箱规核销。
+	for skuID, qty := range looseBySKU {
+		if qty <= 0 {
+			continue
+		}
+		products = append(products, MaterialProduct{
+			ProductType: models.ProductionProductSku,
+			RefID:       skuID,
+			Quantity:    round3(qty),
+		})
+	}
+
+	return products, nil
+}
+
+// RecalculateInventory 重算指定发货单的库存流水（含随货包材核销）。
+//
+// 用于修复历史错账：先清掉该单的全部流水，再按当前口径重建，重复调用幂等。
+func (s *ShipmentService) RecalculateInventory(ctx context.Context, id uint64) error {
+	if id == 0 {
+		return fmt.Errorf("发货单 ID 无效")
+	}
+	ship, err := s.Repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if ship == nil {
+		return fmt.Errorf("发货单不存在：%d", id)
+	}
+	return s.syncInventory(ctx, ship)
 }

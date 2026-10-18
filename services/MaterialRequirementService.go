@@ -241,6 +241,14 @@ func (s *MaterialRequirementService) PackagingNeeds(
 
 	result := make([]models.MaterialRequirement, 0)
 	index := make(map[uint64]int)
+	// 与 Needs 同口径：记下每单位用量与产品数量，用于把「数量 × 1/每箱」换成整数除法。
+	// 用料清单只存 6 位小数（1/642 → 0.001558），642 乘回去是 1.0002，
+	// 向上取整就凭空多出一只纸箱 —— 必须直接用「数量 ÷ 整数每箱数量」。
+	perUnit := make(map[uint64]float64)
+	mixedPerUnit := make(map[uint64]bool)
+	productQty := make(map[uint64]float64)
+	packUnit := make(map[uint64]string)
+	mixedPackUnit := make(map[uint64]bool)
 
 	for i := range products {
 		p := &products[i]
@@ -261,13 +269,49 @@ func (s *MaterialRequirementService) PackagingNeeds(
 				pos = len(result) - 1
 				index[b.MaterialID] = pos
 			}
+			if v, seen := perUnit[b.MaterialID]; !seen {
+				perUnit[b.MaterialID] = b.QuantityPerUnit
+			} else if v != b.QuantityPerUnit {
+				mixedPerUnit[b.MaterialID] = true
+			}
+			// 组合纸箱按"套"、单品纸箱按"个"计（例如"每箱 72 套"）。
+			unit := "个"
+			if p.ProductType == models.ProductionProductRule {
+				unit = "套"
+			}
+			if v, seen := packUnit[b.MaterialID]; !seen {
+				packUnit[b.MaterialID] = unit
+			} else if v != unit {
+				mixedPackUnit[b.MaterialID] = true
+			}
 			result[pos].Quantity += p.Quantity * b.QuantityPerUnit
+			productQty[b.MaterialID] += p.Quantity
 		}
 	}
 
 	for i := range result {
+		mid := result[i].MaterialID
+
+		packPerCarton := 0.0
+		if !mixedPerUnit[mid] && perUnit[mid] > 0 {
+			v := 1 / perUnit[mid]
+			if r := math.Round(v); r > 0 && math.Abs(v-r) < r*0.01 {
+				v = r
+				packPerCarton = r
+			}
+			result[i].PackPerCarton = round3(v)
+			if !mixedPackUnit[mid] {
+				result[i].PackUnit = packUnit[mid]
+			}
+		}
+
 		// 包材按整只核销：发货实际用掉的纸箱不可能是 7.999 个。
-		result[i].Quantity = round3(math.Ceil(result[i].Quantity))
+		q := result[i].Quantity
+		if packPerCarton > 0 {
+			q = productQty[mid] / packPerCarton
+		}
+		result[i].Quantity = round3(math.Ceil(q))
+		result[i].DemandQuantity = round3(productQty[mid])
 	}
 
 	return result, nil

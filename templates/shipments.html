@@ -678,6 +678,7 @@
 
             const parent = `
                 <tr data-kind="set" data-order-item-id="${orderItemId}"
+                    data-rule-id="${first.rule_id ?? ''}"
                     data-set-name="${esc(displayName)}" data-unit="${esc(setUnit)}"
                     data-pack="${setsPerCarton}" data-order-sets="${qty(orderSets)}"
                     data-shipped-sets="${qty(shippedSets)}" data-remaining="${availableSets}"
@@ -859,13 +860,18 @@
                 const quantity = Number(row.find('.line-qty').val()) || 0;
                 if (quantity <= 0) return;
 
-                // 套装父行：按「本次套数 × 每套用量」展开成组成单品再核算。
+                // 套装父行：整行按组合箱规核销（数量 = 套数），不能拆成单品箱。
+                const ruleId = Number(row.attr('data-rule-id')) || 0;
                 const comps = parseComponents(row);
                 if (comps.length) {
-                    comps.forEach(c => {
-                        const need = round3(quantity * c.qps);
-                        if (c.sku_id && need > 0) items.push({ sku_id: c.sku_id, quantity: need });
-                    });
+                    if (ruleId) {
+                        items.push({ rule_id: ruleId, quantity: quantity });
+                    } else {
+                        comps.forEach(c => {
+                            const need = round3(quantity * c.qps);
+                            if (c.sku_id && need > 0) items.push({ sku_id: c.sku_id, quantity: need });
+                        });
+                    }
                     return;
                 }
 
