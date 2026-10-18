@@ -148,7 +148,7 @@ func (s *ProformaInvoiceService) Generate(
 					pi.Items = append(pi.Items, goodsFromShipmentItem(it, groupNo, order.ID, sh.ID, sortOrder))
 				}
 
-				sortOrder = s.appendShipmentCharges(pi, sh, order, sortOrder)
+				sortOrder = s.appendShipmentCharges(ctx, pi, sh, order, sortOrder)
 			}
 			continue
 		}
@@ -436,7 +436,11 @@ func (s *ProformaInvoiceService) resolveOrders(
 }
 
 // appendShipmentCharges 为发货单追加运费/保险费用行，返回新的 sortOrder。
+//
+// 发货单上的运费/保险按录入时的币种保存：币种为 CNY 时按 PI 签发月份汇率折算成
+// PI 币种（与箱费口径一致），其余币种视为已与 PI 同币种，原样带入。
 func (s *ProformaInvoiceService) appendShipmentCharges(
+	ctx context.Context,
 	pi *models.ProformaInvoice,
 	sh *models.Shipment,
 	order models.Order,
@@ -455,7 +459,7 @@ func (s *ProformaInvoiceService) appendShipmentCharges(
 				"Shipping cost by %s for %s for %sctns",
 				method, order.OrderNumber, formatQty(sh.CartonCount),
 			),
-			Amount:     round2(sh.FreightCost),
+			Amount:     s.chargeAmountInPI(ctx, pi, sh, sh.FreightCost),
 			OrderID:    uint64Ptr(order.ID),
 			ShipmentID: uint64Ptr(sh.ID),
 			SortOrder:  sortOrder,
@@ -468,7 +472,7 @@ func (s *ProformaInvoiceService) appendShipmentCharges(
 			ItemType:   models.PIItemCharge,
 			ChargeType: models.PIChargeInsurance,
 			Title:      fmt.Sprintf("Insurance Cost for %s", order.OrderNumber),
-			Amount:     round2(sh.InsuranceCost),
+			Amount:     s.chargeAmountInPI(ctx, pi, sh, sh.InsuranceCost),
 			OrderID:    uint64Ptr(order.ID),
 			ShipmentID: uint64Ptr(sh.ID),
 			SortOrder:  sortOrder,
@@ -476,6 +480,31 @@ func (s *ProformaInvoiceService) appendShipmentCharges(
 	}
 
 	return sortOrder
+}
+
+// chargeAmountInPI 把发货单的费用金额换算成 PI 币种。
+//
+// 只有发货单币种为 CNY 时才做换算（÷ 汇率，保留 2 位小数）；USD 等其它币种
+// 视为与 PI 同币种，原样返回。汇率取不到时同样原样返回，避免把金额算成 0。
+func (s *ProformaInvoiceService) chargeAmountInPI(
+	ctx context.Context,
+	pi *models.ProformaInvoice,
+	sh *models.Shipment,
+	amount float64,
+) float64 {
+	amount = round2(amount)
+	if amount <= 0 {
+		return 0
+	}
+	if !strings.EqualFold(strings.TrimSpace(sh.Currency), "CNY") {
+		return amount
+	}
+
+	rate := s.piExchangeRate(ctx, pi.IssuedDate)
+	if rate <= 0 {
+		return amount
+	}
+	return round2(amount / rate)
 }
 
 // Save 保存 PI：分配单号、重算合计并落库。
