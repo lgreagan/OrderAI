@@ -1,0 +1,594 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">形式发票（PI）</h4>
+            <div class="text-secondary small">按客户订单/发货单自动装配 PI，缺失资料留空由业务员补填</div>
+        </div>
+        <button class="btn btn-primary" id="generateBtn">+ 生成 PI</button>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>PI 号</th>
+                            <th>客户</th>
+                            <th>签发日期</th>
+                            <th class="text-end">货款</th>
+                            <th class="text-end">箱费</th>
+                            <th class="text-end">保险</th>
+                            <th class="text-end">运费</th>
+                            <th class="text-end">合计</th>
+                            <th class="text-end">累计未收</th>
+                            <th class="text-end">已收</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="piBody">
+                        <tr><td colspan="12" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 生成 PI -->
+<div class="modal fade" id="generateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">生成 PI</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">客户姓名（可留空）</label>
+                        <input class="form-control" id="genCustomer" placeholder="按客户姓名筛选订单">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">下单日期从</label>
+                        <input type="date" class="form-control" id="genDateFrom">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">下单日期到</label>
+                        <input type="date" class="form-control" id="genDateTo">
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold">选择要开票的订单</div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" id="reloadOrdersBtn">刷新订单</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="checkAllBtn">全选</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="uncheckAllBtn">全不选</button>
+                    </div>
+                </div>
+                <div class="table-responsive" style="max-height:320px;overflow:auto">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr><th style="width:36px"></th><th>订单号</th><th>客户</th><th>国家</th><th>运输方式</th></tr>
+                        </thead>
+                        <tbody id="orderPickBody">
+                            <tr><td colspan="5" class="text-center text-secondary py-4">正在加载订单...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="doGenerateBtn">生成 PI</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PI 编辑 -->
+<div class="modal fade" id="editorModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">PI 明细</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-2">
+                        <label class="form-label">PI 号</label>
+                        <input class="form-control" id="piNumber" readonly>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">客户</label>
+                        <input class="form-control" id="piCustomer">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">签发日期</label>
+                        <input type="date" class="form-control" id="piIssuedDate">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">历史欠款</label>
+                        <input type="number" class="form-control" id="piCarryover" step="0.01" value="0">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">已收款</label>
+                        <input class="form-control" id="piPaid" readonly>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">状态</label>
+                        <select class="form-select" id="piStatus">
+                            <option value="draft">草稿</option>
+                            <option value="issued">已签发</option>
+                            <option value="closed">已结清</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <button class="btn btn-sm btn-outline-primary" id="addBoxBtn">+ 箱费行</button>
+                    <button class="btn btn-sm btn-outline-primary" id="addChargeBtn">+ 费用行（保险/运费）</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="addNoteBtn">+ 备注行</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="refreshStockBtn">刷新库存说明</button>
+                    <a class="btn btn-sm btn-outline-success ms-auto" href="/payments">收款管理 →</a>
+                </div>
+
+                <div class="table-responsive" style="max-height:420px;overflow:auto">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:70px">类型</th>
+                                <th>描述 / 标题</th>
+                                <th style="width:110px" class="text-end">数量</th>
+                                <th style="width:110px" class="text-end">单价</th>
+                                <th style="width:120px" class="text-end">金额</th>
+                                <th style="width:70px" class="text-center">Paid</th>
+                                <th style="width:54px"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="piItemBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="row g-3 mt-3">
+                    <div class="col-md-12">
+                        <label class="form-label">Box and item in Stock（库存说明，可留空）</label>
+                        <textarea class="form-control" id="piStockNote" rows="4"></textarea>
+                    </div>
+                </div>
+
+                <div class="alert alert-light border mt-3 mb-0">
+                    <div class="row small">
+                        <div class="col-md-2">货款：<span id="sumItem">0.00</span></div>
+                        <div class="col-md-2">箱费：<span id="sumBox">0.00</span></div>
+                        <div class="col-md-2">保险：<span id="sumInsurance">0.00</span></div>
+                        <div class="col-md-2">运费：<span id="sumFreight">0.00</span></div>
+                        <div class="col-md-2">本期合计：<span id="sumAmount">0.00</span></div>
+                        <div class="col-md-2 fw-bold">累计未收：<span id="sumUnpaid">0.00</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-outline-primary" id="exportBtn">导出 Excel</button>
+                <button type="button" class="btn btn-primary" id="savePIBtn">保存 PI</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const editorModal = new bootstrap.Modal(document.getElementById('editorModal'));
+        const generateModal = new bootstrap.Modal(document.getElementById('generateModal'));
+        let piList = [];
+        let state = { pi: null };
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+        const money = v => Number(v || 0).toFixed(2);
+        const round2 = v => Math.round((Number(v) || 0) * 100) / 100;
+
+        const statusPill = s => {
+            const map = {
+                draft: ['草稿', 'secondary'],
+                issued: ['已签发', 'primary'],
+                closed: ['已结清', 'success']
+            };
+            const [text, color] = map[s] || [s, 'secondary'];
+            return `<span class="badge text-bg-${color}">${esc(text)}</span>`;
+        };
+
+        async function loadPIList() {
+            $('#piBody').html('<tr><td colspan="12" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON('/api/proforma-invoices');
+                if (!result.success) throw new Error(result.message || '读取失败');
+                piList = result.data || [];
+                if (!piList.length) {
+                    $('#piBody').html('<tr><td colspan="12" class="text-center text-secondary py-4">暂无 PI</td></tr>');
+                    return;
+                }
+                $('#piBody').html(piList.map(p => `
+                    <tr>
+                        <td class="fw-semibold">${esc(p.pi_number)}</td>
+                        <td>${esc(p.customer_name)}</td>
+                        <td>${p.issued_date ? esc(String(p.issued_date).slice(0, 10)) : ''}</td>
+                        <td class="text-end">${money(p.item_amount)}</td>
+                        <td class="text-end">${money(p.box_amount)}</td>
+                        <td class="text-end">${money(p.insurance_amount)}</td>
+                        <td class="text-end">${money(p.freight_amount)}</td>
+                        <td class="text-end">${money(p.amount)}</td>
+                        <td class="text-end ${Number(p.total_unpaid) > 0 ? 'text-danger fw-semibold' : ''}">${money(p.total_unpaid)}</td>
+                        <td class="text-end ${Number(p.paid_amount) > 0 ? 'text-success' : ''}">${money(p.paid_amount)}</td>
+                        <td>${statusPill(p.status)}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary open-pi" data-id="${p.id}">打开</button>
+                            <button class="btn btn-sm btn-outline-success export-pi" data-id="${p.id}">Excel</button>
+                            <button class="btn btn-sm btn-outline-danger delete-pi" data-id="${p.id}">删除</button>
+                        </td>
+                    </tr>
+                `).join(''));
+            } catch (err) {
+                $('#piBody').html(
+                    `<tr><td colspan="12" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadOrdersForPick() {
+            $('#orderPickBody').html('<tr><td colspan="5" class="text-center py-4">正在加载订单...</td></tr>');
+            try {
+                const result = await $.getJSON('/api/orders');
+                const orders = result.data || [];
+                if (!orders.length) {
+                    $('#orderPickBody').html('<tr><td colspan="5" class="text-center text-secondary py-4">暂无订单</td></tr>');
+                    return;
+                }
+                $('#orderPickBody').html(orders.map(o => `
+                    <tr>
+                        <td><input type="checkbox" class="form-check-input order-check" value="${o.id}"></td>
+                        <td>${esc(o.order_number)}</td>
+                        <td>${esc(o.customer)}</td>
+                        <td>${esc(o.country)}</td>
+                        <td>${esc(o.shipping_method)}</td>
+                    </tr>
+                `).join(''));
+            } catch (err) {
+                $('#orderPickBody').html('<tr><td colspan="5" class="text-danger text-center py-4">读取订单失败</td></tr>');
+            }
+        }
+
+        function setGenerateDatesToToday() {
+            // 使用浏览器本地日期，避免 UTC 时区导致日期偏差
+            const now = new Date();
+            const today = [
+                now.getFullYear(),
+                String(now.getMonth() + 1).padStart(2, '0'),
+                String(now.getDate()).padStart(2, '0')
+            ].join('-');
+            $('#genDateFrom').val(today);
+            $('#genDateTo').val(today);
+        }
+
+        $('#generateBtn').on('click', function () {
+            setGenerateDatesToToday();
+            generateModal.show();
+            loadOrdersForPick();
+        });
+        $('#reloadOrdersBtn').on('click', loadOrdersForPick);
+        $('#checkAllBtn').on('click', () => $('.order-check').prop('checked', true));
+        $('#uncheckAllBtn').on('click', () => $('.order-check').prop('checked', false));
+
+        $('#doGenerateBtn').on('click', async function () {
+            const orderIds = $('.order-check:checked').map(function () { return Number(this.value); }).get();
+            const payload = {
+                customer_name: $('#genCustomer').val().trim(),
+                order_ids: orderIds,
+                date_from: $('#genDateFrom').val() || '',
+                date_to: $('#genDateTo').val() || ''
+            };
+
+            const btn = $(this).prop('disabled', true).text('生成中...');
+            try {
+                const result = await $.ajax({
+                    url: '/api/proforma-invoices/generate',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '生成失败');
+                generateModal.hide();
+
+                // 新生成的 PI 中，货款/箱费明细的 Paid 默认全部不勾选
+                const generatedPI = result.data;
+                generatedPI.items = generatedPI.items || [];
+                generatedPI.items.forEach(item => {
+                    if (item.item_type === 'goods' || item.item_type === 'box') {
+                        item.is_paid = false;
+                    }
+                });
+
+                // 明细里没有箱费行时，默认补一行 box cost（数量取总箱数，单价可改，金额自动算）
+                if (!generatedPI.items.some(it => it.item_type === 'box')) {
+                    generatedPI.items.push(defaultBoxCostItem(generatedPI.items));
+                }
+                openEditor(generatedPI);
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '生成 PI 失败');
+            } finally {
+                btn.prop('disabled', false).text('生成 PI');
+            }
+        });
+
+        function openEditor(pi) {
+            state.pi = pi;
+            state.pi.items = pi.items || [];
+            $('#piNumber').val(pi.pi_number || '');
+            $('#piCustomer').val(pi.customer_name || '');
+            $('#piIssuedDate').val(pi.issued_date ? String(pi.issued_date).slice(0, 10) : '');
+            $('#piCarryover').val(pi.carryover_amount || 0);
+            $('#piPaid').val(money(pi.paid_amount));
+            $('#piStatus').val(pi.status || 'draft');
+            $('#piStockNote').val(pi.stock_note || '');
+            renderItems();
+            editorModal.show();
+        }
+
+        $('#piCarryover').on('input', recalc);
+
+        const typeLabel = t => ({
+            group: '分组', goods: '货款', box: '箱费', charge: '费用', note: '备注'
+        }[t] || t);
+
+        function renderItems() {
+            const items = state.pi.items;
+            if (!items.length) {
+                $('#piItemBody').html('<tr><td colspan="7" class="text-center text-secondary py-4">暂无明细</td></tr>');
+                recalc();
+                return;
+            }
+
+            $('#piItemBody').html(items.map((it, idx) => {
+                if (it.item_type === 'group') {
+                    return `<tr class="table-secondary">
+                        <td class="fw-semibold">分组</td>
+                        <td colspan="5"><input class="form-control form-control-sm item-field"
+                             data-idx="${idx}" data-field="group_title" value="${esc(it.group_title || '')}"></td>
+                        <td class="text-center"><button class="btn btn-sm btn-outline-danger item-del" data-idx="${idx}">×</button></td>
+                    </tr>`;
+                }
+
+                const descField = it.item_type === 'charge' ? 'title' : 'description';
+                // 货款行：数量可编辑，单价只读，金额 = 数量 × 单价（只读）
+                // 箱费行：数量与单价均可编辑，金额 = 数量 × 单价（只读）
+                const isBox = it.item_type === 'box';
+                const isQtyRow = it.item_type === 'goods' || isBox;
+
+                const amountCell = it.item_type === 'note'
+                    ? '<td></td>'
+                    : it.item_type === 'charge'
+                        ? `<td><input type="number" class="form-control form-control-sm text-end item-field row-amount"
+                                data-idx="${idx}" data-field="amount" step="0.01" value="${Number(it.amount || 0)}"></td>`
+                        : `<td class="text-end align-middle fw-semibold"><span class="row-amount">${money(it.amount)}</span></td>`;
+
+                const qtyCell = isQtyRow
+                    ? `<td><input type="number" class="form-control form-control-sm text-end item-field"
+                            data-idx="${idx}" data-field="quantity" step="0.001" min="0" value="${it.quantity ?? 0}"></td>
+                       ${isBox
+                            ? `<td><input type="number" class="form-control form-control-sm text-end item-field row-unit-price"
+                                    data-idx="${idx}" data-field="unit_price" step="0.01" min="0" value="${Number(it.unit_price || 0)}"></td>`
+                            : `<td class="text-end align-middle text-secondary row-unit-price">${money(it.unit_price)}</td>`}`
+                    : '<td></td><td></td>';
+
+                const paidCell = isQtyRow
+                    ? `<td class="text-center"><input type="checkbox" class="form-check-input item-field"
+                            data-idx="${idx}" data-field="is_paid" ${it.is_paid ? 'checked' : ''}></td>`
+                    : '<td></td>';
+
+                return `<tr>
+                    <td>${typeLabel(it.item_type)}</td>
+                    <td><input class="form-control form-control-sm item-field"
+                         data-idx="${idx}" data-field="${descField}" value="${esc(it[descField] || '')}"></td>
+                    ${qtyCell}
+                    ${amountCell}
+                    ${paidCell}
+                    <td class="text-center"><button class="btn btn-sm btn-outline-danger item-del" data-idx="${idx}">×</button></td>
+                </tr>`;
+            }).join(''));
+
+            recalc();
+        }
+
+        // 字段修改
+        $('#piItemBody').on('input change', '.item-field', function () {
+            const idx = Number($(this).data('idx'));
+            const field = $(this).data('field');
+            const item = state.pi.items[idx];
+            if (!item) return;
+
+            if ($(this).attr('type') === 'checkbox') {
+                item[field] = $(this).is(':checked');
+            } else if ($(this).attr('type') === 'number') {
+                item[field] = Number($(this).val()) || 0;
+                if (field === 'quantity' || field === 'unit_price') {
+                    item.amount = round2(Number(item.quantity || 0) * Number(item.unit_price || 0));
+                    // 只刷新本行金额，不重绘整表，避免输入框失焦导致只能输入一位
+                    const $amount = $(this).closest('tr').find('.row-amount');
+                    if ($amount.is('input')) $amount.val(item.amount);
+                    else $amount.text(money(item.amount));
+                    recalc();
+                    return;
+                }
+            } else {
+                item[field] = $(this).val();
+            }
+            recalc();
+        });
+
+        $('#piItemBody').on('click', '.item-del', function () {
+            const idx = Number($(this).data('idx'));
+            state.pi.items.splice(idx, 1);
+            renderItems();
+        });
+
+        function addItem(item) {
+            state.pi.items.push(item);
+            renderItems();
+        }
+
+        const round3 = v => Math.round((Number(v) || 0) * 1000) / 1000;
+
+        // 总箱数：优先按分组标题 `{单号} ({箱数}ctns) {运输方式}` 汇总。
+        function totalCartons(items) {
+            const fromGroups = (items || []).reduce((sum, it) => {
+                if (it.item_type !== 'group') return sum;
+                const matched = String(it.group_title || '').match(/\(([\d.]+)\s*ctns?\)/i);
+                return sum + (matched ? Number(matched[1]) : 0);
+            }, 0);
+            if (fromGroups > 0) return round3(fromGroups);
+
+            // 分组没有箱数时，退回按货款行描述 `... (64pcs/ctn, 1ctn)` 累加。
+            return round3((items || []).reduce((sum, it) => {
+                if (it.item_type !== 'goods') return sum;
+                const matched = String(it.description || '').match(/,\s*([\d.]+)\s*ctn\)/i);
+                return sum + (matched ? Number(matched[1]) : 0);
+            }, 0));
+        }
+
+        // 默认箱费行：名称 box cost，数量取总箱数，单价可编辑，金额 = 数量 × 单价。
+        function defaultBoxCostItem(items) {
+            return {
+                item_type: 'box', group_no: 0, model: '', short_name: '',
+                description: 'box cost', quantity: totalCartons(items),
+                unit: 'ctn', unit_price: 0, amount: 0, is_paid: false
+            };
+        }
+
+        $('#addBoxBtn').on('click', () => addItem(defaultBoxCostItem(state.pi.items)));
+        $('#addChargeBtn').on('click', () => addItem({
+            item_type: 'charge', charge_type: 'other', title: '', amount: 0
+        }));
+        $('#addNoteBtn').on('click', () => addItem({
+            item_type: 'note', description: ''
+        }));
+
+        function recalc() {
+            let item = 0, box = 0, insurance = 0, freight = 0;
+            state.pi.items.forEach(it => {
+                if (it.item_type === 'goods' && !it.is_paid) item += Number(it.amount || 0);
+                else if (it.item_type === 'box' && !it.is_paid) box += Number(it.amount || 0);
+                else if (it.item_type === 'charge') {
+                    if (it.charge_type === 'insurance') insurance += Number(it.amount || 0);
+                    else if (it.charge_type === 'shipping') freight += Number(it.amount || 0);
+                }
+            });
+            $('#sumItem').text(money(item));
+            $('#sumBox').text(money(box));
+            $('#sumInsurance').text(money(insurance));
+            $('#sumFreight').text(money(freight));
+            const amount = item + box + insurance + freight;
+            $('#sumAmount').text(money(amount));
+            // 累计未收 = 本期合计 + 历史欠款 − 已收款
+            const carryover = Number($('#piCarryover').val()) || 0;
+            const paid = Number($('#piPaid').val()) || 0;
+            $('#sumUnpaid').text(money(amount + carryover - paid));
+        }
+
+        $('#savePIBtn').on('click', async function () {
+            if (!state.pi) return;
+            state.pi.customer_name = $('#piCustomer').val().trim();
+            state.pi.issued_date = $('#piIssuedDate').val() || null;
+            state.pi.carryover_amount = Number($('#piCarryover').val()) || 0;
+            state.pi.status = $('#piStatus').val();
+            state.pi.stock_note = $('#piStockNote').val();
+
+            if (!state.pi.items.length) { alert('至少需要一条明细'); return; }
+
+            const btn = $(this).prop('disabled', true).text('保存中...');
+            try {
+                const id = state.pi.id;
+                const result = await $.ajax({
+                    url: id ? `/api/proforma-invoices/${id}` : '/api/proforma-invoices',
+                    method: id ? 'PUT' : 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(state.pi),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                const saved = result.data;
+                state.pi.id = saved.id;
+                state.pi.pi_number = saved.pi_number;
+                $('#piNumber').val(saved.pi_number);
+                await loadPIList();
+                alert('已保存，可点击“导出 Excel”。');
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '保存 PI 失败');
+            } finally {
+                btn.prop('disabled', false).text('保存 PI');
+            }
+        });
+
+        $('#refreshStockBtn').on('click', async function () {
+            if (!state.pi || !state.pi.id) { alert('请先保存 PI，再刷新库存说明'); return; }
+            $(this).prop('disabled', true).text('刷新中...');
+            try {
+                const result = await $.ajax({
+                    url: `/api/proforma-invoices/${state.pi.id}/refresh-stock-note`,
+                    method: 'POST',
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '刷新失败');
+                $('#piStockNote').val(result.data || '');
+                state.pi.stock_note = result.data || '';
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '刷新库存说明失败');
+            } finally {
+                $(this).prop('disabled', false).text('刷新库存说明');
+            }
+        });
+
+        $('#exportBtn').on('click', function () {
+            if (!state.pi || !state.pi.id) { alert('请先保存 PI 再导出'); return; }
+            window.location = `/api/proforma-invoices/${state.pi.id}/export`;
+        });
+
+        $('#piBody').on('click', '.open-pi', async function () {
+            const id = Number($(this).data('id'));
+            try {
+                const result = await $.getJSON(`/api/proforma-invoices/${id}`);
+                if (!result.success) throw new Error(result.message || '读取失败');
+                openEditor(result.data);
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '读取 PI 失败');
+            }
+        });
+
+        $('#piBody').on('click', '.export-pi', function () {
+            window.location = `/api/proforma-invoices/${$(this).data('id')}/export`;
+        });
+
+        $('#piBody').on('click', '.delete-pi', async function () {
+            const id = Number($(this).data('id'));
+            if (!confirm('确定删除这张 PI 吗？')) return;
+            try {
+                const result = await $.ajax({
+                    url: `/api/proforma-invoices/${id}`, method: 'DELETE', dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '删除失败');
+                await loadPIList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '删除失败');
+            }
+        });
+
+        loadPIList();
+    });
+</script>
+{{end}}

@@ -1,0 +1,1011 @@
+{{define "content"}}
+
+<style>
+    body {
+        background: #f5f6f8;
+    }
+
+    .page-container {
+        max-width: 1400px;
+        margin: 30px auto;
+        padding: 0 20px;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .page-title {
+        font-size: 26px;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    .page-subtitle {
+        color: #6c757d;
+        margin-top: 5px;
+    }
+
+    .card {
+        border: none;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    }
+
+    .card-title {
+        font-size: 17px;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    .card-subtitle {
+        color: #6c757d;
+        font-size: 13px;
+        margin-bottom: 16px;
+    }
+
+    .section-title {
+        font-size: 15px;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+
+    .items-table th {
+        background: #f8f9fa;
+        white-space: nowrap;
+        font-weight: 600;
+    }
+
+    .items-table td {
+        vertical-align: middle;
+    }
+
+    .match-result-table th {
+        background: #f8f9fa;
+        white-space: nowrap;
+        font-weight: 600;
+    }
+
+    .required-mark {
+        color: #dc3545;
+    }
+</style>
+
+<div class="page-container">
+
+    <div class="page-header">
+
+        <div>
+            <h1 class="page-title">
+                {{if .id}}编辑订单{{else}}新建订单{{end}}
+            </h1>
+
+            <div class="page-subtitle">
+                每个产品行选择「单品直配」或「组合匹配」，保存时按所选产品写入匹配结果
+            </div>
+        </div>
+
+        <a href="/orders" class="btn btn-outline-secondary">
+            返回订单列表
+        </a>
+
+    </div>
+
+
+    <div id="formMessage"></div>
+
+
+    <!-- 订单信息 -->
+    <div class="card mb-3">
+
+        <div class="card-body">
+
+            <div class="section-title">
+                订单信息
+            </div>
+
+            <div class="row g-3">
+
+                <div class="col-md-3">
+                    <label class="form-label" for="orderNumber">
+                        订单号 <span class="required-mark">*</span>
+                    </label>
+                    <input id="orderNumber" class="form-control"
+                           maxlength="100" placeholder="如 PO-20260101-001">
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label" for="customer">客户</label>
+                    <input id="customer" class="form-control"
+                           maxlength="255" placeholder="客户名称">
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label" for="country">国家</label>
+                    <input id="country" class="form-control"
+                           maxlength="100" placeholder="如 美国">
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label" for="shippingMethod">运输方式</label>
+                    <input id="shippingMethod" class="form-control"
+                           maxlength="100" placeholder="如 海运">
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label" for="status">订单状态</label>
+                    <select id="status" class="form-select"></select>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- 产品明细 -->
+    <div class="card mb-3">
+
+        <div class="card-body">
+
+            <div class="d-flex justify-content-between align-items-start mb-3">
+
+                <div>
+                    <div class="section-title mb-1">
+                        产品明细
+                    </div>
+                    <div class="text-muted small">
+                        「单品直配」直接匹配所选 SKU；「组合匹配」按组合规则展开组成单品，
+                        订单单位为箱时按每箱套数换算
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="button" id="syncActualBtn"
+                            class="btn btn-sm btn-outline-secondary"
+                            title="把每行的数量填入实际数量（实际数量留空时保存也会默认同数量）">
+                        一键同步实际数量
+                    </button>
+                    <button type="button" id="addItemBtn"
+                            class="btn btn-sm btn-outline-primary">
+                        ＋ 添加产品行
+                    </button>
+                </div>
+
+            </div>
+
+            <div class="table-responsive">
+
+                <table class="table items-table align-middle">
+
+                    <thead>
+                    <tr>
+                        <th style="width:60px;">行</th>
+                        <th style="min-width:300px;">
+                            匹配产品 <span class="required-mark">*</span>
+                        </th>
+                        <th style="min-width:180px;">产品名称</th>
+                        <th style="min-width:140px;">规格</th>
+                        <th style="width:120px;">
+                            数量 <span class="required-mark">*</span>
+                        </th>
+                        <th style="width:110px;">单位</th>
+                        <th style="width:130px;">实际数量</th>
+                        <th style="width:90px;"></th>
+                    </tr>
+                    </thead>
+
+                    <tbody id="itemRows"></tbody>
+
+                </table>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- 匹配结果 -->
+    <div class="card mb-3">
+
+        <div class="card-body">
+
+            <div class="section-title">
+                匹配结果
+            </div>
+
+            <div id="matchResult" class="text-muted small">
+                选择匹配产品后显示匹配结果
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="d-flex gap-2 mb-4">
+
+        <button type="button" id="saveBtn" class="btn btn-primary">
+            保存订单
+        </button>
+
+        <a href="/orders" class="btn btn-outline-secondary">
+            取消
+        </a>
+
+    </div>
+
+</div>
+
+
+<datalist id="unitOptions">
+    <option value="套"></option>
+    <option value="箱"></option>
+    <option value="个"></option>
+    <option value="件"></option>
+    <option value="PCS"></option>
+    <option value="CTN"></option>
+</datalist>
+
+
+<script>
+
+    const ORDER_ID = Number("{{.id}}") || 0;
+
+    // 订单状态与后端 models 中的状态常量保持一致。
+    const STATUS_OPTIONS = [
+        { value: "confirmed", label: "已确认" },
+        { value: "purchased", label: "已采购" },
+        { value: "produced", label: "已生产" },
+        { value: "shipped", label: "已发货" },
+        { value: "paid", label: "已收款" },
+        { value: "completed", label: "完结" }
+    ];
+
+    let skus = [];
+    let rules = [];
+    let previewTimer = null;
+
+
+    $(document).ready(function () {
+
+        fillStatusOptions();
+
+        loadMatchOptions().then(
+            function () {
+                if (ORDER_ID > 0) {
+                    loadOrder();
+                } else {
+                    addItemRow();
+                }
+            },
+            function (message) {
+                showMessage(message, true);
+            }
+        );
+
+        $("#addItemBtn").on("click", function () {
+            addItemRow();
+            refreshMatchPreview();
+        });
+
+        // 一键同步实际数量：把每行的数量填入实际数量，便于按数量直接核对。
+        $("#syncActualBtn").on("click", function () {
+            $("#itemRows .item-row").each(function () {
+                const row = $(this);
+                row.find(".actual-quantity").val(row.find(".quantity").val() || "");
+            });
+            refreshMatchPreview();
+        });
+
+        $("#saveBtn").on("click", submitOrder);
+
+        // 表头变化不影响匹配，只需在明细变化时刷新匹配结果。
+        $("#itemRows").on("change input", ".match-select, .quantity, .unit", function () {
+            refreshMatchPreview();
+        });
+
+        $("#itemRows").on("change", ".match-select", function () {
+            applySelectionDefaults($(this).closest(".item-row"));
+        });
+
+        $("#itemRows").on("click", ".remove-row", function () {
+            $(this).closest(".item-row").remove();
+
+            if ($(".item-row").length === 0) {
+                addItemRow();
+            }
+
+            renumberRows();
+            refreshMatchPreview();
+        });
+
+    });
+
+
+    /* ============================
+       订单状态
+    ============================ */
+
+    function fillStatusOptions() {
+
+        let html = "";
+
+        STATUS_OPTIONS.forEach(function (option) {
+            html += '<option value="' + option.value + '">' +
+                escapeHtml(option.label) + '</option>';
+        });
+
+        $("#status").html(html).val("confirmed");
+    }
+
+
+    /* ============================
+       匹配产品下拉数据
+    ============================ */
+
+    function loadMatchOptions() {
+
+        return $.when(
+            $.getJSON("/api/skus"),
+            $.getJSON("/api/product-match-rules")
+        ).then(
+            function (skuResponse, ruleResponse) {
+                skus = (skuResponse[0] && skuResponse[0].data) || [];
+                rules = (ruleResponse[0] && ruleResponse[0].data) || [];
+            },
+            function () {
+                return $.Deferred()
+                    .reject("读取单品 SKU 与组合规则失败")
+                    .promise();
+            }
+        );
+    }
+
+    function skuOptionLabel(sku) {
+
+        const parts = [
+            sku.sku_code,
+            sku.product_name_zh || sku.product_name
+        ];
+
+        const extra = [sku.model, sku.color].filter(Boolean).join(" / ");
+
+        if (extra) {
+            parts.push(extra);
+        }
+
+        let label = parts.filter(Boolean).join(" · ");
+
+        if (sku.status && sku.status !== "active") {
+            label += "（停用）";
+        }
+
+        return label;
+    }
+
+    function ruleOptionLabel(rule) {
+
+        const parts = [
+            rule.rule_code,
+            rule.product_name_zh || rule.customer_product_name
+        ];
+
+        if (rule.product_name_zh && rule.customer_product_name) {
+            parts.push(rule.customer_product_name);
+        }
+
+        if (rule.customer_specification) {
+            parts.push(rule.customer_specification);
+        }
+
+        let label = parts.filter(Boolean).join(" · ");
+
+        if (rule.status && rule.status !== "active") {
+            label += "（停用）";
+        }
+
+        return label;
+    }
+
+    function fillMatchOptions(select) {
+
+        let html = '<option value="">请选择匹配产品</option>';
+
+        html += '<optgroup label="单品直配（直接匹配）">';
+
+        skus.forEach(function (sku) {
+            html += '<option value="sku:' + sku.id + '">' +
+                escapeHtml(skuOptionLabel(sku)) + '</option>';
+        });
+
+        html += '</optgroup>';
+
+        html += '<optgroup label="组合匹配（组合规则）">';
+
+        rules.forEach(function (rule) {
+            html += '<option value="rule:' + rule.id + '">' +
+                escapeHtml(ruleOptionLabel(rule)) + '</option>';
+        });
+
+        html += '</optgroup>';
+
+        select.html(html);
+    }
+
+
+    /* ============================
+       产品行
+    ============================ */
+
+    function addItemRow(item) {
+
+        const row = $(`
+            <tr class="item-row">
+                <td class="row-no"></td>
+                <td>
+                    <select class="form-select form-select-sm match-select"></select>
+                </td>
+                <td>
+                    <input class="form-control form-control-sm product-name"
+                           maxlength="500" placeholder="客户订单上的产品名称">
+                </td>
+                <td>
+                    <input class="form-control form-control-sm specification"
+                           maxlength="500" placeholder="规格">
+                </td>
+                <td>
+                    <input type="number" min="0" step="0.001"
+                           class="form-control form-control-sm quantity" value="1">
+                </td>
+                <td>
+                    <input class="form-control form-control-sm unit"
+                           list="unitOptions" value="套">
+                </td>
+                <td>
+                    <input type="number" min="0" step="0.001"
+                           class="form-control form-control-sm actual-quantity"
+                           placeholder="默认同数量">
+                </td>
+                <td>
+                    <button type="button"
+                            class="btn btn-sm btn-outline-danger remove-row">
+                        删除
+                    </button>
+                </td>
+            </tr>
+        `);
+
+        fillMatchOptions(row.find(".match-select"));
+
+        if (item) {
+            row.find(".product-name").val(item.product_name || "");
+            row.find(".specification").val(item.specification || "");
+            row.find(".quantity").val(
+                item.quantity !== undefined && item.quantity !== null
+                    ? item.quantity
+                    : 1
+            );
+            row.find(".unit").val(item.unit || "套");
+            row.find(".actual-quantity").val(
+                item.actual_quantity > 0 ? item.actual_quantity : ""
+            );
+
+            const selection = selectionFromItem(item);
+
+            if (selection) {
+                row.find(".match-select")
+                    .val(selection.type + ":" + selection.id);
+            }
+        }
+
+        $("#itemRows").append(row);
+        renumberRows();
+    }
+
+    function renumberRows() {
+        $("#itemRows .item-row").each(function (index) {
+            $(this).find(".row-no").text(index + 1);
+        });
+    }
+
+    // selectionFromItem 从订单行的匹配结果还原所选的匹配产品。
+    function selectionFromItem(item) {
+
+        const matches = item.matches || [];
+
+        for (let i = 0; i < matches.length; i++) {
+            if (matches[i].rule_id) {
+                return { type: "rule", id: matches[i].rule_id };
+            }
+        }
+
+        if (matches.length > 0) {
+            return { type: "sku", id: matches[0].sku_id };
+        }
+
+        return null;
+    }
+
+    // applySelectionDefaults 在所选产品名称等字段为空时自动回填。
+    function applySelectionDefaults(row) {
+
+        const selection = parseSelection(row.find(".match-select").val());
+        let name = "";
+        let specification = "";
+
+        if (selection.type === "sku") {
+            const sku = findSku(selection.id);
+
+            if (sku) {
+                name = sku.product_name || sku.product_name_zh || "";
+            }
+        } else if (selection.type === "rule") {
+            const rule = findRule(selection.id);
+
+            if (rule) {
+                name = rule.product_name_zh || rule.customer_product_name || "";
+                specification = rule.customer_specification || "";
+            }
+        }
+
+        const nameInput = row.find(".product-name");
+        const specInput = row.find(".specification");
+
+        if (name && !nameInput.val().trim()) {
+            nameInput.val(name);
+        }
+
+        if (specification && !specInput.val().trim()) {
+            specInput.val(specification);
+        }
+    }
+
+    function findSku(id) {
+
+        for (let i = 0; i < skus.length; i++) {
+            if (Number(skus[i].id) === Number(id)) {
+                return skus[i];
+            }
+        }
+
+        return null;
+    }
+
+    function findRule(id) {
+
+        for (let i = 0; i < rules.length; i++) {
+            if (Number(rules[i].id) === Number(id)) {
+                return rules[i];
+            }
+        }
+
+        return null;
+    }
+
+    function parseSelection(value) {
+
+        const parts = String(value || "").split(":");
+
+        if (parts.length !== 2 || !parts[1]) {
+            return { type: "", id: 0 };
+        }
+
+        return { type: parts[0], id: Number(parts[1]) };
+    }
+
+    function collectItems() {
+
+        const items = [];
+
+        $("#itemRows .item-row").each(function (index) {
+
+            const row = $(this);
+            const selection = parseSelection(row.find(".match-select").val());
+
+            items.push({
+                line_number: index + 1,
+                product_name: row.find(".product-name").val().trim(),
+                specification: row.find(".specification").val().trim(),
+                quantity: toNumber(row.find(".quantity").val()),
+                unit: row.find(".unit").val().trim(),
+                actual_quantity: toNumber(row.find(".actual-quantity").val()),
+                match_type: selection.type,
+                match_id: selection.id
+            });
+        });
+
+        return items;
+    }
+
+
+    /* ============================
+       匹配结果预览
+    ============================ */
+
+    function refreshMatchPreview() {
+
+        if (previewTimer) {
+            clearTimeout(previewTimer);
+        }
+
+        previewTimer = setTimeout(runMatchPreview, 250);
+    }
+
+    function runMatchPreview() {
+
+        const items = collectItems();
+        const box = $("#matchResult");
+
+        if (items.length === 0) {
+            box.html("请先添加产品行");
+            return;
+        }
+
+        const hasSelection = items.some(function (item) {
+            return item.match_type && item.match_id > 0;
+        });
+
+        if (!hasSelection) {
+            box.html("选择匹配产品后显示匹配结果");
+            return;
+        }
+
+        box.html("正在计算匹配结果...");
+
+        $.ajax({
+
+            url: "/api/order/match",
+
+            type: "POST",
+
+            contentType: "application/json",
+
+            data: JSON.stringify({ items: items }),
+
+            success: function (res) {
+
+                if (!res.success) {
+                    box.html(
+                        '<div class="alert alert-danger mb-0">' +
+                        escapeHtml(res.message || "匹配失败") +
+                        '</div>'
+                    );
+                    return;
+                }
+
+                renderMatchResult(res.data || [], res.summary || {});
+            },
+
+            error: function (xhr) {
+
+                let message = "匹配失败";
+
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    message += "：" + xhr.responseJSON.message;
+                }
+
+                box.html(
+                    '<div class="alert alert-danger mb-0">' +
+                    escapeHtml(message) +
+                    '</div>'
+                );
+            }
+
+        });
+    }
+
+    function renderMatchResult(previews, summary) {
+
+        const total = summary.total || previews.length;
+        const direct = summary.direct_count || 0;
+        const rule = summary.rule_count || 0;
+        const unmatched = summary.unmatched_count || 0;
+
+        let rows = "";
+
+        previews.forEach(function (preview) {
+
+            const previewSkus = preview.skus || [];
+            const rowspan = previewSkus.length > 0 ? previewSkus.length : 1;
+
+            let matchLabel = '<span class="badge text-bg-danger">未匹配</span>';
+
+            if (preview.matched && preview.match_type === "sku") {
+                matchLabel = '<span class="badge text-bg-success">单品直配</span>';
+            } else if (preview.matched) {
+                matchLabel =
+                    '<span class="badge text-bg-primary">组合匹配</span>' +
+                    '<div class="small text-muted">' +
+                    escapeHtml(preview.rule_code || "-") +
+                    '</div>';
+            }
+
+            const itemCells = `
+                <td rowspan="${rowspan}">${preview.line_number}</td>
+                <td rowspan="${rowspan}">
+                    ${escapeHtml(preview.product_name || "-")}
+                    ${preview.specification
+                        ? '<div class="small text-muted">' +
+                          escapeHtml(preview.specification) + '</div>'
+                        : ''}
+                </td>
+                <td rowspan="${rowspan}">
+                    ${formatNumber(preview.quantity)} ${escapeHtml(preview.unit || "")}
+                    ${preview.carton_converted
+                        ? '<div class="small text-muted">= ' +
+                          formatNumber(preview.base_quantity) + ' 套</div>'
+                        : ''}
+                </td>
+                <td rowspan="${rowspan}">${matchLabel}</td>
+            `;
+
+            if (previewSkus.length === 0) {
+
+                rows += `
+                    <tr>
+                        ${itemCells}
+                        <td colspan="3" class="text-danger">
+                            ${escapeHtml(preview.message || "未匹配到 SKU")}
+                        </td>
+                    </tr>
+                `;
+
+                return;
+            }
+
+            previewSkus.forEach(function (sku, index) {
+
+                rows += `
+                    <tr>
+                        ${index === 0 ? itemCells : ""}
+                        <td>
+                            ${escapeHtml(sku.sku_code)}
+                            <div class="small text-muted">
+                                ${escapeHtml(sku.product_name_zh || sku.product_name)}
+                            </div>
+                            <div class="small text-muted">
+                                ${escapeHtml(sku.model || "-")}
+                                ${sku.color ? " · " + escapeHtml(sku.color) : ""}
+                            </div>
+                        </td>
+                        <td>${formatNumber(sku.quantity_per_set)}</td>
+                        <td>
+                            <strong>${formatNumber(sku.required_quantity)}</strong>
+                        </td>
+                    </tr>
+                `;
+            });
+        });
+
+        $("#matchResult").html(`
+            <div class="alert ${unmatched > 0 ? "alert-warning" : "alert-success"} py-2">
+                共 ${total} 行：单品直配 <strong>${direct}</strong> 行，
+                组合匹配 <strong>${rule}</strong> 行，
+                未匹配 <strong>${unmatched}</strong> 行。
+                ${unmatched > 0
+                    ? "<br>未匹配的产品行无法保存，请重新选择匹配产品。"
+                    : ""}
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle match-result-table">
+                    <thead>
+                    <tr>
+                        <th style="width:60px;">行</th>
+                        <th>产品名称</th>
+                        <th style="width:140px;">订单数量</th>
+                        <th style="width:150px;">匹配方式</th>
+                        <th>匹配 SKU</th>
+                        <th style="width:110px;">每套数量</th>
+                        <th style="width:110px;">需求数量</th>
+                    </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `);
+    }
+
+
+    /* ============================
+       加载订单（编辑）
+    ============================ */
+
+    function loadOrder() {
+
+        $.ajax({
+
+            url: "/api/orders/" + ORDER_ID,
+
+            type: "GET",
+
+            success: function (res) {
+
+                if (!res.success) {
+                    showMessage(res.message || "订单加载失败", true);
+                    return;
+                }
+
+                const order = res.data || {};
+
+                $("#orderNumber").val(order.order_number || "");
+                $("#customer").val(order.customer || "");
+                $("#country").val(order.country || "");
+                $("#shippingMethod").val(order.shipping_method || "");
+                $("#status").val(order.status || "confirmed");
+
+                const items = order.items || [];
+
+                if (items.length === 0) {
+                    addItemRow();
+                } else {
+                    items.forEach(function (item) {
+                        addItemRow(item);
+                    });
+                }
+
+                refreshMatchPreview();
+            },
+
+            error: function (xhr) {
+
+                let message = "订单加载失败";
+
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                }
+
+                showMessage(message, true);
+            }
+
+        });
+    }
+
+
+    /* ============================
+       保存订单
+    ============================ */
+
+    function submitOrder() {
+
+        clearMessage();
+
+        const payload = {
+            order_number: $("#orderNumber").val().trim(),
+            customer: $("#customer").val().trim(),
+            country: $("#country").val().trim(),
+            shipping_method: $("#shippingMethod").val().trim(),
+            status: $("#status").val(),
+            items: collectItems()
+        };
+
+        if (!payload.order_number) {
+            showMessage("请填写订单号", true);
+            return;
+        }
+
+        if (payload.items.length === 0) {
+            showMessage("订单至少需要一个产品", true);
+            return;
+        }
+
+        for (let i = 0; i < payload.items.length; i++) {
+
+            const item = payload.items[i];
+
+            if (!item.match_type || !item.match_id) {
+                showMessage("第 " + (i + 1) + " 行请选择匹配产品", true);
+                return;
+            }
+
+            if (!(item.quantity > 0)) {
+                showMessage("第 " + (i + 1) + " 行数量必须大于 0", true);
+                return;
+            }
+        }
+
+        const button = $("#saveBtn");
+        const originalText = button.text();
+
+        button.prop("disabled", true).text("正在保存...");
+
+        $.ajax({
+
+            url: ORDER_ID > 0 ? "/api/orders/" + ORDER_ID : "/api/orders",
+
+            type: ORDER_ID > 0 ? "PUT" : "POST",
+
+            contentType: "application/json",
+
+            data: JSON.stringify(payload),
+
+            success: function (res) {
+
+                if (!res.success) {
+                    showMessage(res.message || "保存失败", true);
+                    button.prop("disabled", false).text(originalText);
+                    return;
+                }
+
+                const id = (res.data && res.data.id) || ORDER_ID;
+
+                window.location.href = "/orders/" + id;
+            },
+
+            error: function (xhr) {
+
+                let message = "保存失败";
+
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                }
+
+                showMessage(message, true);
+                button.prop("disabled", false).text(originalText);
+            }
+
+        });
+    }
+
+
+    /* ============================
+       提示
+    ============================ */
+
+    function showMessage(message, isError) {
+
+        $("#formMessage").html(
+            '<div class="alert ' +
+            (isError ? "alert-danger" : "alert-success") +
+            '">' +
+            escapeHtml(message) +
+            '</div>'
+        );
+
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function clearMessage() {
+        $("#formMessage").empty();
+    }
+
+    function toNumber(value) {
+
+        const number = Number(value);
+
+        return isNaN(number) ? 0 : number;
+    }
+
+    function formatNumber(value) {
+
+        const number = Number(value || 0);
+
+        if (Number.isInteger(number)) {
+            return String(number);
+        }
+
+        return number.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+    }
+
+    function escapeHtml(value) {
+
+        if (value === null || value === undefined) {
+            return "";
+        }
+
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+</script>
+
+{{end}}

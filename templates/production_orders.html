@@ -1,0 +1,685 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">生产订单</h4>
+            <div class="text-secondary small">生产单可人工维护，计划量可大于客户需求；<b>作业类型</b>决定完工时的库存处理，材料在「领料出库」页面按实际用量出库</div>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" id="reportPOBtn">汇总报表</button>
+            <button class="btn btn-outline-primary" id="pushDownBtn">从订单下推</button>
+            <button class="btn btn-primary" id="addPOBtn">+ 新建生产单</button>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body small text-secondary">
+            下推说明：按客户订单下推生产单草稿并<b>保存原始需求</b>；同时按 SKU / 组合规则的装箱信息
+            （长×宽×高 = 纸箱大小）自动下推<b>纸箱用料</b>，作为「领料出库」时的需求量参考。<br>
+            <b>作业类型</b>：投料生产 = 领原料、完工入成品库；包装装箱 = 只耗包装材料、成品不动；只记录 = 不动库存。
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-5">
+                    <input id="keyword" class="form-control" placeholder="搜索生产单号、来源订单号、客户、备注">
+                </div>
+                <div class="col-lg-3">
+                    <select id="statusFilter" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="draft">草稿</option>
+                        <option value="producing">生产中</option>
+                        <option value="completed">已完工</option>
+                        <option value="cancelled">已取消</option>
+                    </select>
+                </div>
+                <div class="col-lg-4 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>生产单号</th>
+                            <th>来源</th>
+                            <th>作业类型</th>
+                            <th>计划日期</th>
+                            <th class="text-end">明细</th>
+                            <th class="text-end">完工</th>
+                            <th class="text-end">合计箱数</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="poBody">
+                        <tr><td colspan="9" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="poCount"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 新建 / 编辑生产单 -->
+<div class="modal fade" id="poModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="poForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="poModalTitle">新建生产单</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="poId">
+                    <div class="alert alert-light border py-2 px-3 small mb-3 d-none" id="poSourceHint"></div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">来源订单（可留空）</label>
+                            <div class="input-group">
+                                <select class="form-select" id="sourceOrderId">
+                                    <option value="">不关联订单</option>
+                                </select>
+                                <button class="btn btn-outline-secondary" type="button" id="loadSuggestionBtn">载入建议</button>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" id="poStatus">
+                                <option value="draft">草稿</option>
+                                <option value="producing">生产中</option>
+                                <option value="completed">已完工</option>
+                                <option value="cancelled">已取消</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">作业类型</label>
+                            <select class="form-select" id="poWorkType">
+                                <option value="produce">投料生产</option>
+                                <option value="pack">包装装箱</option>
+                                <option value="none">只记录</option>
+                            </select>
+                            <div class="form-text" id="workTypeHint"></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">计划日期</label>
+                            <input type="date" class="form-control" id="planDate">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">开始日期</label>
+                            <input type="date" class="form-control" id="startDate">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">完成日期</label>
+                            <input type="date" class="form-control" id="finishDate">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">备注</label>
+                            <input class="form-control" id="poRemark" maxlength="500">
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                        <div class="fw-semibold">生产明细</div>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="text-secondary small">组合套按"套"生产，单品按"个"生产</div>
+                            <button class="btn btn-sm btn-outline-primary" type="button" id="syncRequiredBtn"
+                                    title="把每行的需求填入计划量，整单按需求生产">一键同步需求</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive" style="max-height:340px;overflow:auto">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:80px">类型</th>
+                                    <th>产品</th>
+                                    <th class="text-end" style="width:100px">需求</th>
+                                    <th class="text-end" style="width:110px">计划量</th>
+                                    <th class="text-end" style="width:90px">每箱</th>
+                                    <th class="text-end" style="width:90px">箱数</th>
+                                    <th class="text-end" style="width:100px">已生产</th>
+                                    <th style="width:54px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="poItemBody">
+                                <tr><td colspan="8" class="text-center text-secondary py-4">暂无明细，请先载入建议</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="text-end small mt-2">合计箱数：<span id="sumCartons" class="fw-semibold">0</span></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="screenPOBtn">截图</button>
+                    <button type="button" class="btn btn-outline-secondary" id="printPOBtn">打印单据</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="savePOBtn">保存生产单</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 从订单下推 -->
+<div class="modal fade" id="pushModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">从客户订单下推生产单</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2 small text-secondary">
+                    选择客户订单：系统保存生产需求快照，并按装箱信息下推纸箱用料。
+                </div>
+                <select class="form-select" id="pushOrderId">
+                    <option value="">请选择订单</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="doPushBtn">下推并保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 完工登记 -->
+<div class="modal fade" id="completeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">完工登记 <span class="text-secondary small" id="completePONumber"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-light border py-2 px-3 small mb-3" id="completeHint"></div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>产品</th>
+                                <th class="text-end">计划量</th>
+                                <th class="text-end">已生产</th>
+                                <th style="width:150px" class="text-end">本次累计生产</th>
+                            </tr>
+                        </thead>
+                        <tbody id="completeBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-success me-auto" id="completeAllBtn">全部入库</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveCompleteBtn">保存完工</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const api = '/api/production-orders';
+        const poModal = new bootstrap.Modal(document.getElementById('poModal'));
+        const completeModal = new bootstrap.Modal(document.getElementById('completeModal'));
+        const pushModal = new bootstrap.Modal(document.getElementById('pushModal'));
+        let poList = [];
+        let state = { po: null };
+        let completePO = null;
+        let ordersLoaded = false;
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+        const qty = v => Number(v || 0).toFixed(3).replace(/\.?0+$/, '');
+
+        const statusPill = s => {
+            const map = {
+                draft: ['草稿', 'secondary'],
+                producing: ['生产中', 'primary'],
+                completed: ['已完工', 'success'],
+                cancelled: ['已取消', 'dark']
+            };
+            const [text, color] = map[s] || [s, 'secondary'];
+            return `<span class="badge text-bg-${color}">${text}</span>`;
+        };
+
+        // 来源优先显示采购单（仅历史单据可能带有），否则显示客户订单号。
+        const sourceText = p => p.source_purchase_number
+            ? `采购单 ${esc(p.source_purchase_number)}`
+            : esc(p.source_order_number || '');
+
+        // 作业类型：决定完工时是否产生成品入库，避免与采购入库重复记账。
+        const workTypeMap = {
+            produce: {
+                label: '投料生产',
+                color: 'primary',
+                hint: '领原料出库，完工时成品入库'
+            },
+            pack: {
+                label: '包装装箱',
+                color: 'info',
+                hint: '货已在采购入库，完工不再入成品库，只耗包装材料'
+            },
+            none: {
+                label: '只记录',
+                color: 'secondary',
+                hint: '仅用于排期与统计，不产生任何库存变动'
+            }
+        };
+        const workTypeInfo = w => workTypeMap[w] || workTypeMap.produce;
+        const workTypePill = w => {
+            const info = workTypeInfo(w);
+            return `<span class="badge text-bg-${info.color}">${info.label}</span>`;
+        };
+        const syncWorkTypeHint = () => {
+            $('#workTypeHint').text(workTypeInfo($('#poWorkType').val()).hint);
+        };
+        $('#poWorkType').on('change', syncWorkTypeHint);
+
+        async function loadPOList() {
+            $('#poBody').html('<tr><td colspan="9" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON(api, {
+                    keyword: $('#keyword').val().trim(),
+                    status: $('#statusFilter').val()
+                });
+                if (!result.success) throw new Error(result.message || '读取失败');
+                poList = result.data || [];
+                if (!poList.length) {
+                    $('#poBody').html('<tr><td colspan="9" class="text-center text-secondary py-4">暂无生产单</td></tr>');
+                    $('#poCount').text('共 0 张生产单');
+                    return;
+                }
+                $('#poBody').html(poList.map(p => `
+                    <tr>
+                        <td class="fw-semibold">${esc(p.po_number)}</td>
+                        <td>${sourceText(p)}</td>
+                        <td>${workTypePill(p.work_type)}</td>
+                        <td>${p.plan_date ? esc(String(p.plan_date).slice(0, 10)) : ''}</td>
+                        <td class="text-end">${p.item_count}</td>
+                        <td class="text-end">${p.completed_count}/${p.item_count}</td>
+                        <td class="text-end">${qty(p.total_cartons)}</td>
+                        <td>${statusPill(p.status)}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-secondary print-po" data-id="${p.id}">打印</button>
+                            <button class="btn btn-sm btn-outline-secondary screen-po" data-id="${p.id}">截图</button>
+                            <button class="btn btn-sm btn-outline-primary edit-po" data-id="${p.id}">编辑</button>
+                            <button class="btn btn-sm btn-outline-success complete-po" data-id="${p.id}">完工</button>
+                            <button class="btn btn-sm btn-outline-danger delete-po" data-id="${p.id}">删除</button>
+                        </td>
+                    </tr>
+                `).join(''));
+                $('#poCount').text(`共 ${poList.length} 张生产单`);
+            } catch (err) {
+                $('#poBody').html(
+                    `<tr><td colspan="9" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadOrders() {
+            if (ordersLoaded) return;
+            try {
+                const result = await $.getJSON('/api/orders');
+                const orders = result.data || [];
+                $('#sourceOrderId').html('<option value="">不关联订单</option>' + orders.map(o =>
+                    `<option value="${o.id}">${esc(o.order_number)} · ${esc(o.customer || '')} · ${esc(o.country || '')}</option>`
+                ).join(''));
+                ordersLoaded = true;
+            } catch (err) { /* 忽略 */ }
+        }
+
+        function resetForm() {
+            $('#poForm')[0].reset();
+            $('#poId').val('');
+            $('#poStatus').val('draft');
+            $('#poWorkType').val('produce');
+            syncWorkTypeHint();
+            $('#planDate').val(new Date().toISOString().slice(0, 10));
+            $('#poSourceHint').addClass('d-none').text('');
+            state.po = { items: [] };
+            renderItems();
+        }
+
+        function cartonsOf(it) {
+            const pack = Number(it.sets_per_carton) || 0;
+            return pack > 0 ? Number(it.planned_quantity || 0) / pack : 0;
+        }
+
+        function renderItems() {
+            const items = state.po.items || [];
+            if (!items.length) {
+                $('#poItemBody').html('<tr><td colspan="8" class="text-center text-secondary py-4">暂无明细，请先载入建议</td></tr>');
+                recalc();
+                return;
+            }
+            $('#poItemBody').html(items.map((it, idx) => `
+                <tr>
+                    <td>${it.product_type === 'sku' ? '单品' : '组合套'}</td>
+                    <td>
+                        <div class="fw-semibold">${esc(it.product_name)}</div>
+                        <div class="small text-secondary">${esc(it.short_name || it.spec || '')}</div>
+                    </td>
+                    <td class="text-end">${qty(it.required_quantity)}</td>
+                    <td><input type="number" class="form-control form-control-sm text-end item-field"
+                               data-idx="${idx}" data-field="planned_quantity" min="0" step="0.001" value="${it.planned_quantity ?? 0}"></td>
+                    <td class="text-end">${qty(it.sets_per_carton)}</td>
+                    <td class="text-end">${qty(cartonsOf(it))}</td>
+                    <td class="text-end">${qty(it.produced_quantity)}</td>
+                    <td class="text-center"><button class="btn btn-sm btn-outline-danger item-del" data-idx="${idx}">×</button></td>
+                </tr>
+            `).join(''));
+            recalc();
+        }
+
+        $('#poItemBody').on('input', '.item-field', function () {
+            const idx = Number($(this).data('idx'));
+            const it = state.po.items[idx];
+            if (!it) return;
+            it.planned_quantity = Number($(this).val()) || 0;
+            renderItems();
+        });
+
+        $('#poItemBody').on('click', '.item-del', function () {
+            state.po.items.splice(Number($(this).data('idx')), 1);
+            renderItems();
+        });
+
+        // 一键同步需求：把每行产品的需求数量填入计划量，整单按需求生产。
+        $('#syncRequiredBtn').on('click', function () {
+            const items = state.po.items || [];
+            if (!items.length) { alert('暂无明细，请先载入建议'); return; }
+            items.forEach(it => { it.planned_quantity = Number(it.required_quantity) || 0; });
+            renderItems();
+        });
+
+        $('#loadSuggestionBtn').on('click', async function () {
+            const orderId = Number($('#sourceOrderId').val()) || 0;
+            if (!orderId) { alert('请先选择来源订单'); return; }
+
+            $(this).prop('disabled', true).text('载入中...');
+            try {
+                const result = await $.getJSON(`${api}/order/${orderId}/suggestion`);
+                if (!result.success) throw new Error(result.message || '载入失败');
+                state.po.source_order_id = orderId;
+                state.po.items = (result.data.items || []).map(d => ({
+                    product_type: d.product_type,
+                    product_ref_id: d.product_ref_id,
+                    product_name: d.product_name,
+                    short_name: d.short_name || '',
+                    spec: d.spec || '',
+                    required_quantity: Number(d.required_quantity) || 0,
+                    planned_quantity: Number(d.planned_quantity) || 0,
+                    produced_quantity: 0,
+                    sets_per_carton: Number(d.sets_per_carton) || 0,
+                    unit: d.unit || '套',
+                    remark: ''
+                }));
+                renderItems();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '载入生产建议失败');
+            } finally {
+                $(this).prop('disabled', false).text('载入建议');
+            }
+        });
+
+        function recalc() {
+            let total = 0;
+            (state.po.items || []).forEach(it => { total += cartonsOf(it); });
+            $('#sumCartons').text(qty(Math.round(total * 1000) / 1000));
+        }
+
+        $('#addPOBtn').on('click', async function () {
+            resetForm();
+            await loadOrders();
+            $('#poModalTitle').text('新建生产单');
+            poModal.show();
+        });
+
+        async function openPOEditor(id) {
+            await loadOrders();
+            const result = await $.getJSON(`${api}/${id}`);
+            if (!result.success) throw new Error(result.message || '读取失败');
+            const po = result.data;
+
+            resetForm();
+            state.po = po;
+            state.po.items = po.items || [];
+            $('#poId').val(po.id);
+            $('#sourceOrderId').val(po.source_order_id || '');
+            $('#poStatus').val(po.status || 'draft');
+            $('#poWorkType').val(po.work_type || 'produce');
+            syncWorkTypeHint();
+            $('#planDate').val(po.plan_date ? String(po.plan_date).slice(0, 10) : '');
+            $('#startDate').val(po.start_date ? String(po.start_date).slice(0, 10) : '');
+            $('#finishDate').val(po.finish_date ? String(po.finish_date).slice(0, 10) : '');
+            $('#poRemark').val(po.remark || '');
+            const sourceNote = po.source_purchase_number
+                ? `来源采购单：<b>${esc(po.source_purchase_number)}</b>`
+                : (po.source_order_number ? `来源订单：<b>${esc(po.source_order_number)}</b>` : '');
+            if (sourceNote) {
+                $('#poSourceHint').removeClass('d-none').html(
+                    `${sourceNote}　作业类型：<b>${esc(workTypeInfo(po.work_type).label)}</b>——${esc(workTypeInfo(po.work_type).hint)}`
+                );
+            } else {
+                $('#poSourceHint').addClass('d-none').text('');
+            }
+            renderItems();
+            $('#poModalTitle').text('编辑生产单');
+            poModal.show();
+        }
+
+        $('#poBody').on('click', '.edit-po', async function () {
+            const id = Number($(this).data('id'));
+            try {
+                await openPOEditor(id);
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '读取生产单失败');
+            }
+        });
+
+        // 从订单下推
+        $('#pushDownBtn').on('click', async function () {
+            await loadOrders();
+            $('#pushOrderId').html($('#sourceOrderId').html());
+            $('#pushOrderId').val('');
+            pushModal.show();
+        });
+
+        $('#doPushBtn').on('click', async function () {
+            const orderId = Number($('#pushOrderId').val()) || 0;
+            if (!orderId) { alert('请选择订单'); return; }
+
+            $(this).prop('disabled', true).text('下推中...');
+            try {
+                const result = await $.ajax({
+                    url: `${api}/order/${orderId}/push`,
+                    method: 'POST',
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '下推失败');
+                pushModal.hide();
+                await loadPOList();
+                await openPOEditor(result.data.id);
+                if (result.created && result.cartons) {
+                    setTimeout(() => alert(`已下推纸箱用料 ${result.cartons} 项（产品 → 纸箱），可在「产品用料」页查看/调整。`), 300);
+                }
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '下推生产单失败');
+            } finally {
+                $(this).prop('disabled', false).text('下推并保存');
+            }
+        });
+
+        $('#poForm').on('submit', async function (e) {
+            e.preventDefault();
+            const id = $('#poId').val();
+            const items = (state.po.items || []).filter(it => Number(it.planned_quantity) > 0 || Number(it.required_quantity) > 0);
+            if (!items.length) { alert('请至少添加一条有效明细（计划量大于0）'); return; }
+
+            const payload = {
+                po_number: state.po.po_number || '',
+                source_order_id: Number($('#sourceOrderId').val()) || null,
+                status: $('#poStatus').val(),
+                work_type: $('#poWorkType').val(),
+                plan_date: $('#planDate').val() || null,
+                start_date: $('#startDate').val() || null,
+                finish_date: $('#finishDate').val() || null,
+                remark: $('#poRemark').val().trim(),
+                items: items.map(it => ({
+                    id: it.id || 0,
+                    product_type: it.product_type,
+                    product_ref_id: it.product_ref_id || null,
+                    product_name: it.product_name,
+                    short_name: it.short_name || '',
+                    spec: it.spec || '',
+                    planned_quantity: Number(it.planned_quantity) || 0,
+                    required_quantity: Number(it.required_quantity) || 0,
+                    sets_per_carton: Number(it.sets_per_carton) || 0,
+                    unit: it.unit || '套',
+                    remark: it.remark || ''
+                }))
+            };
+
+            $('#savePOBtn').prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: id ? `${api}/${id}` : api,
+                    method: id ? 'PUT' : 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                poModal.hide();
+                await loadPOList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '保存生产单失败');
+            } finally {
+                $('#savePOBtn').prop('disabled', false).text('保存生产单');
+            }
+        });
+
+        $('#poBody').on('click', '.print-po', function () {
+            window.open(`/production-orders/${$(this).data('id')}/print`, '_blank');
+        });
+
+        $('#poBody').on('click', '.screen-po', function () {
+            window.open(`/production-orders/${$(this).data('id')}/screen`, '_blank');
+        });
+
+        $('#screenPOBtn').on('click', function () {
+            if (!state.po || !state.po.id) { alert('请先保存生产单，再截图'); return; }
+            window.open(`/production-orders/${state.po.id}/screen`, '_blank');
+        });
+
+        $('#reportPOBtn').on('click', function () {
+            window.open('/production-orders/report', '_blank');
+        });
+
+        $('#printPOBtn').on('click', function () {
+            if (!state.po || !state.po.id) { alert('请先保存生产单，再打印单据'); return; }
+            window.open(`/production-orders/${state.po.id}/print`, '_blank');
+        });
+
+        // 完工登记
+        $('#poBody').on('click', '.complete-po', async function () {
+            const id = Number($(this).data('id'));
+            try {
+                const result = await $.getJSON(`${api}/${id}`);
+                if (!result.success) throw new Error(result.message || '读取失败');
+                completePO = result.data;
+                $('#completePONumber').text(completePO.po_number);
+
+                const hintByType = {
+                    produce: `作业类型：<b>投料生产</b>。保存后按已生产数量<b>入成品库</b>；原料请到「领料出库」页面按实际用量（含损耗）出库。`,
+                    pack: `作业类型：<b>包装装箱</b>。货已由采购到货入库，完工<b>不再入成品库</b>；包装材料随发货自动核销，也可在「领料出库」手工登记。`,
+                    none: `作业类型：<b>只记录</b>。完工不产生任何库存变动，仅更新生产进度。`
+                };
+                $('#completeHint').html(hintByType[completePO.work_type] || hintByType.produce);
+                $('#completeAllBtn').text(completePO.work_type === 'produce' ? '全部入库' : '全部填满');
+
+                $('#completeBody').html((completePO.items || []).map(it => `
+                    <tr data-item-id="${it.id}" data-planned="${it.planned_quantity || 0}">
+                        <td>${esc(it.product_name)} <span class="text-secondary small">${esc(it.short_name || '')}</span></td>
+                        <td class="text-end">${qty(it.planned_quantity)}</td>
+                        <td class="text-end">${qty(it.produced_quantity)}</td>
+                        <td><input type="number" class="form-control form-control-sm text-end complete-input"
+                                   min="0" step="0.001" value="${it.produced_quantity || 0}"></td>
+                    </tr>
+                `).join(''));
+                completeModal.show();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '读取生产单失败');
+            }
+        });
+
+        // 全部入库：把每行"本次累计生产"填为计划量，数量有出入可再手动改。
+        $('#completeAllBtn').on('click', function () {
+            $('#completeBody tr').each(function () {
+                $(this).find('.complete-input').val(Number($(this).data('planned')) || 0);
+            });
+        });
+
+        $('#saveCompleteBtn').on('click', async function () {
+            if (!completePO) return;
+            const items = $('#completeBody tr').map(function () {
+                return {
+                    id: Number($(this).data('item-id')),
+                    produced_quantity: Number($(this).find('.complete-input').val()) || 0
+                };
+            }).get();
+
+            $(this).prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: `${api}/${completePO.id}/complete`,
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ items: items }),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                completeModal.hide();
+                await loadPOList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '完工登记失败');
+            } finally {
+                $(this).prop('disabled', false).text('保存完工');
+            }
+        });
+
+        $('#poBody').on('click', '.delete-po', async function () {
+            const id = Number($(this).data('id'));
+            const po = poList.find(x => Number(x.id) === id);
+            if (!po) return;
+            if (!confirm(`确定删除生产单「${po.po_number}」吗？\n\n本单自动产生的成品入库流水会撤销；已登记的领料出库记录会保留（料已实际消耗）。`)) return;
+            try {
+                const result = await $.ajax({ url: `${api}/${id}`, method: 'DELETE', dataType: 'json' });
+                if (!result.success) throw new Error(result.message || '删除失败');
+                await loadPOList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '删除失败');
+            }
+        });
+
+        $('#searchBtn,#refreshBtn').on('click', loadPOList);
+        $('#statusFilter').on('change', loadPOList);
+        $('#keyword').on('keydown', e => { if (e.key === 'Enter') loadPOList(); });
+
+        loadPOList();
+    });
+</script>
+{{end}}

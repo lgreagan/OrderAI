@@ -1,0 +1,955 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">采购订单</h4>
+            <div class="text-secondary small">采购单可人工维护，采购量可大于客户需求（凑量更划算），到货入库后形成库存</div>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" id="reportPOBtn">汇总报表</button>
+            <button class="btn btn-outline-primary" id="pushDownBtn">从订单下推</button>
+            <button class="btn btn-primary" id="addPOBtn">+ 新建采购单</button>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body small text-secondary">
+            下推说明：按客户订单的 SKU 需求生成采购单草稿并<b>保存原始需求</b>（建议采购量 = 需求 − 库存 − 在途，
+            采购量默认与建议量相同），之后由采购员按实际情况修改数量与单价。<br>
+            明细<b>产品与材料分列</b>：点「采购材料」可按产品数量带出纸箱等用量，方便与产品一起采购。<br>
+            <b>编辑已有采购单</b>时，删除一条已到货的明细行会<b>同步冲销该行已入库的库存</b>，保证单据与库存一致。
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-5">
+                    <input id="keyword" class="form-control" placeholder="搜索采购单号、供应商、来源订单号、备注">
+                </div>
+                <div class="col-lg-3">
+                    <select id="statusFilter" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="draft">草稿</option>
+                        <option value="ordered">已下单</option>
+                        <option value="partial">部分到货</option>
+                        <option value="received">已到货</option>
+                        <option value="cancelled">已取消</option>
+                    </select>
+                </div>
+                <div class="col-lg-4 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>采购单号</th>
+                            <th>供应商</th>
+                            <th>来源订单</th>
+                            <th>下单日期</th>
+                            <th>预计到货</th>
+                            <th class="text-end">明细</th>
+                            <th class="text-end">货款</th>
+                            <th class="text-end">运费</th>
+                            <th class="text-end">合计</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="poBody">
+                        <tr><td colspan="11" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="poCount"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 新建 / 编辑采购单 -->
+<div class="modal fade" id="poModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="poForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="poModalTitle">新建采购单</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="poId">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">来源订单（可留空）</label>
+                            <div class="input-group">
+                                <select class="form-select" id="sourceOrderId">
+                                    <option value="">不关联订单</option>
+                                </select>
+                                <button class="btn btn-outline-secondary" type="button" id="loadSuggestionBtn">载入建议</button>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">供应商</label>
+                            <input class="form-control" id="supplierName" maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" id="poStatus">
+                                <option value="draft">草稿</option>
+                                <option value="ordered">已下单</option>
+                                <option value="partial">部分到货</option>
+                                <option value="received">已到货</option>
+                                <option value="cancelled">已取消</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">下单日期</label>
+                            <input type="date" class="form-control" id="orderDate">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">预计到货</label>
+                            <input type="date" class="form-control" id="expectedDate">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">货币</label>
+                            <select class="form-select" id="currency">
+                                <option value="CNY">CNY</option>
+                                <option value="USD">USD</option>
+                                <option value="EUR">EUR</option>
+                                <option value="GBP">GBP</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">运费</label>
+                            <input type="number" class="form-control" id="freightAmount" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">备注</label>
+                            <input class="form-control" id="poRemark" maxlength="500">
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+                    <div class="fw-semibold mb-2">采购明细</div>
+
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+                        <div class="small text-secondary">产品</div>
+                        <button class="btn btn-sm btn-outline-primary" type="button" id="syncSuggestedBtn"
+                                title="把每行产品的建议量填入采购量，整单按建议量采购">一键同步建议量</button>
+                    </div>
+                    <div class="table-responsive" style="max-height:260px;overflow:auto">
+                        <table class="table table-sm align-middle mb-3">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>产品</th>
+                                    <th class="text-end" style="width:100px" title="建议量 = 客户需求 − 库存 − 在途；采购量默认与建议量相同">建议量</th>
+                                    <th class="text-end" style="width:110px">采购量</th>
+                                    <th class="text-end" style="width:110px">单价</th>
+                                    <th class="text-end" style="width:110px">金额</th>
+                                    <th class="text-end" style="width:90px">已入库</th>
+                                    <th style="width:54px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="poProductBody">
+                                <tr><td colspan="7" class="text-center text-secondary py-3">暂无产品，请先载入建议或添加</td></tr>
+                            </tbody>
+                            <tfoot id="poProductFoot" class="table-light" style="position:sticky;bottom:0">
+                                <tr>
+                                    <td colspan="2" class="text-end fw-semibold">产品小计</td>
+                                    <td class="text-end fw-semibold" id="sumProductQty">0</td>
+                                    <td></td>
+                                    <td class="text-end fw-semibold" id="sumProductAmount">0.00</td>
+                                    <td></td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+                        <div class="small text-secondary">材料（与产品分开采购）</div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-success" type="button" id="purchaseMaterialBtn"
+                                    title="按产品采购量带出纸箱等材料用量">采购材料</button>
+                            <select class="form-select form-select-sm" id="itemPicker" style="min-width:240px">
+                                <option value="">选择产品 / 材料添加一行…</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-primary" type="button" id="addItemBtn">添加行</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive" style="max-height:240px;overflow:auto">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>材料</th>
+                                    <th class="text-end" style="width:110px">用量</th>
+                                    <th class="text-end" style="width:110px">单价</th>
+                                    <th class="text-end" style="width:110px">金额</th>
+                                    <th class="text-end" style="width:90px">已入库</th>
+                                    <th style="width:54px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="poMaterialBody">
+                                <tr><td colspan="6" class="text-center text-secondary py-3">暂无材料，可点「采购材料」按产品数量带出</td></tr>
+                            </tbody>
+                            <tfoot id="poMaterialFoot" class="table-light" style="position:sticky;bottom:0">
+                                <tr>
+                                    <td class="text-end fw-semibold">材料小计</td>
+                                    <td class="text-end fw-semibold" id="sumMaterialQty">0</td>
+                                    <td></td>
+                                    <td class="text-end fw-semibold" id="sumMaterialAmount">0.00</td>
+                                    <td></td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div class="text-end small mt-2">
+                        产品小计：<span id="footProductAmount" class="fw-semibold">0.00</span>
+                        &nbsp;&nbsp;材料小计：<span id="footMaterialAmount" class="fw-semibold">0.00</span>
+                        &nbsp;&nbsp;运费：<span id="sumFreight" class="fw-semibold">0.00</span>
+                        &nbsp;&nbsp;合计：<span id="sumTotal" class="fw-bold">0.00</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="screenPOBtn">截图</button>
+                    <button type="button" class="btn btn-outline-secondary" id="printPOBtn">打印单据</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="savePOBtn">保存采购单</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 从订单下推 -->
+<div class="modal fade" id="pushModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">从客户订单下推采购单</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2 small text-secondary">选择客户订单，系统按 SKU 需求下推并保存采购单草稿。</div>
+                <select class="form-select" id="pushOrderId">
+                    <option value="">请选择订单</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="doPushBtn">下推并保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 到货登记 -->
+<div class="modal fade" id="receiveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">到货登记 <span class="text-secondary small" id="receivePONumber"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-secondary mb-2">填写本次累计已入库数量，保存后自动写入库存流水。</div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>物品</th>
+                                <th class="text-end">采购量</th>
+                                <th class="text-end">已入库</th>
+                                <th style="width:140px" class="text-end">本次累计入库</th>
+                            </tr>
+                        </thead>
+                        <tbody id="receiveBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-success me-auto" id="receiveAllBtn">全部入库</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveReceiveBtn">保存到货</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const api = '/api/purchase-orders';
+        const poModal = new bootstrap.Modal(document.getElementById('poModal'));
+        const receiveModal = new bootstrap.Modal(document.getElementById('receiveModal'));
+        const pushModal = new bootstrap.Modal(document.getElementById('pushModal'));
+        let poList = [];
+        let state = { po: null };
+        let allItems = [];
+        let receivePO = null;
+        let ordersLoaded = false;
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+        const money = v => Number(v || 0).toFixed(2);
+        const qty = v => Number(v || 0).toFixed(3).replace(/\.?0+$/, '');
+
+        // 建议量 = 需求 − 库存 − 在途；已保存的单据没有该净建议量，回退显示已保存的需求快照。
+        const suggestedOf = it => Number(it.suggested_quantity ?? it.required_quantity) || 0;
+
+        const statusPill = s => {
+            const map = {
+                draft: ['草稿', 'secondary'],
+                ordered: ['已下单', 'primary'],
+                partial: ['部分到货', 'warning'],
+                received: ['已到货', 'success'],
+                cancelled: ['已取消', 'dark']
+            };
+            const [text, color] = map[s] || [s, 'secondary'];
+            return `<span class="badge text-bg-${color}">${text}</span>`;
+        };
+
+        async function loadPOList() {
+            $('#poBody').html('<tr><td colspan="11" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON(api, {
+                    keyword: $('#keyword').val().trim(),
+                    status: $('#statusFilter').val()
+                });
+                if (!result.success) throw new Error(result.message || '读取失败');
+                poList = result.data || [];
+                if (!poList.length) {
+                    $('#poBody').html('<tr><td colspan="11" class="text-center text-secondary py-4">暂无采购单</td></tr>');
+                    $('#poCount').text('共 0 张采购单');
+                    return;
+                }
+                $('#poBody').html(poList.map(p => `
+                    <tr>
+                        <td class="fw-semibold">${esc(p.po_number)}</td>
+                        <td>${esc(p.supplier_name)}</td>
+                        <td>${esc(p.source_order_number)}</td>
+                        <td>${p.order_date ? esc(String(p.order_date).slice(0, 10)) : ''}</td>
+                        <td>${p.expected_date ? esc(String(p.expected_date).slice(0, 10)) : ''}</td>
+                        <td class="text-end">${p.received_count}/${p.item_count}</td>
+                        <td class="text-end">${money(p.goods_amount)}</td>
+                        <td class="text-end">${money(p.freight_amount)}</td>
+                        <td class="text-end fw-semibold">${money(p.total_amount)}</td>
+                        <td>${statusPill(p.status)}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-secondary print-po" data-id="${p.id}">打印</button>
+                            <button class="btn btn-sm btn-outline-secondary screen-po" data-id="${p.id}">截图</button>
+                            <button class="btn btn-sm btn-outline-primary edit-po" data-id="${p.id}">编辑</button>
+                            <button class="btn btn-sm btn-outline-success receive-po" data-id="${p.id}">到货</button>
+                            <button class="btn btn-sm btn-outline-danger delete-po" data-id="${p.id}">删除</button>
+                        </td>
+                    </tr>
+                `).join(''));
+                $('#poCount').text(`共 ${poList.length} 张采购单`);
+            } catch (err) {
+                $('#poBody').html(
+                    `<tr><td colspan="11" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadOrders() {
+            if (ordersLoaded) return;
+            try {
+                const result = await $.getJSON('/api/orders');
+                const orders = result.data || [];
+                $('#sourceOrderId').html('<option value="">不关联订单</option>' + orders.map(o =>
+                    `<option value="${o.id}">${esc(o.order_number)} · ${esc(o.customer || '')} · ${esc(o.country || '')}</option>`
+                ).join(''));
+                ordersLoaded = true;
+            } catch (err) { /* 忽略 */ }
+        }
+
+        async function loadItems() {
+            if (allItems.length) return;
+            try {
+                const [skus, mats] = await Promise.all([
+                    $.getJSON('/api/skus', {}),
+                    $.getJSON('/api/materials', {})
+                ]);
+                allItems = [];
+                (skus.data || []).forEach(s => allItems.push({
+                    type: 'sku', id: s.id, code: s.sku_code,
+                    name: s.short_name || s.product_name_zh || s.product_name,
+                    unit: s.unit || 'pcs', price: Number(s.price) || 0
+                }));
+                (mats.data || []).forEach(m => allItems.push({
+                    type: 'material', id: m.id, code: m.code,
+                    name: m.short_name || m.name_zh || m.name,
+                    unit: m.unit || 'pcs', price: Number(m.price) || 0
+                }));
+                $('#itemPicker').html('<option value="">选择产品 / 材料添加一行…</option>' + allItems.map((it, i) =>
+                    `<option value="${i}">${it.type === 'material' ? '[材料]' : '[产品]'} ${esc(it.code)} ${esc(it.name)}</option>`
+                ).join(''));
+            } catch (err) { /* 忽略 */ }
+        }
+
+        function resetForm() {
+            $('#poForm')[0].reset();
+            $('#poId').val('');
+            $('#poStatus').val('draft');
+            $('#currency').val('CNY');
+            $('#freightAmount').val('0');
+            $('#orderDate').val(new Date().toISOString().slice(0, 10));
+            state.po = { items: [] };
+            pulledMaterials = false;
+            clearTimeout(materialTimer);
+            renderItems();
+        }
+
+        // 产品与材料分成两个列表，避免混在一起（材料由「采购材料」按产品数量带出）。
+        function productRows(items) {
+            const list = (items || []).map((it, idx) => ({ it, idx }))
+                .filter(x => x.it.item_type !== 'material');
+            if (!list.length) {
+                return '<tr><td colspan="7" class="text-center text-secondary py-3">暂无产品，请先载入建议或添加</td></tr>';
+            }
+            return list.map(({ it, idx }) => `
+                <tr>
+                    <td>
+                        <div class="fw-semibold">${esc(it.item_code)}</div>
+                        <div class="small text-secondary">${esc(it.item_name || it.short_name)}</div>
+                    </td>
+                    <td class="text-end">${qty(suggestedOf(it))}</td>
+                    <td><input type="number" class="form-control form-control-sm text-end item-field"
+                               data-idx="${idx}" data-field="quantity" min="0" step="0.001" value="${it.quantity ?? suggestedOf(it)}"></td>
+                    <td><input type="number" class="form-control form-control-sm text-end item-field"
+                               data-idx="${idx}" data-field="unit_price" min="0" step="0.01" value="${it.unit_price ?? 0}"></td>
+                    <td class="text-end fw-semibold item-amount">${money(it.amount)}</td>
+                    <td class="text-end">${qty(it.received_quantity)}</td>
+                    <td class="text-center"><button class="btn btn-sm btn-outline-danger item-del" data-idx="${idx}">×</button></td>
+                </tr>
+            `).join('');
+        }
+
+        function materialRows(items) {
+            const list = (items || []).map((it, idx) => ({ it, idx }))
+                .filter(x => x.it.item_type === 'material');
+            if (!list.length) {
+                return '<tr><td colspan="6" class="text-center text-secondary py-3">暂无材料，可点「采购材料」按产品数量带出</td></tr>';
+            }
+            return list.map(({ it, idx }) => {
+                // 折算依据：纸箱按源订单需求量 ÷ 每箱数量（个 / 套），与采购量无关；
+                // 没有来源订单时才退回按采购量折算。
+                const unit = it.pack_unit || '个';
+                const fromOrder = it.basis === 'order';
+                const demand = Number(it.demand_quantity) || 0;
+                const basis = it.manual_quantity
+                    ? '已手工修改数量，不再自动折算'
+                    : (it.pack_per_carton > 0
+                        ? (fromOrder
+                            ? `按源订单 ${qty(demand)} ${unit} ÷ 每箱 ${qty(it.pack_per_carton)} ${unit} 折算（不随采购量变化）`
+                            : `按采购量 ÷ 每箱 ${qty(it.pack_per_carton)} ${unit} 折算`)
+                        : '');
+                return `
+                <tr>
+                    <td>
+                        <div class="fw-semibold">${esc(it.item_code)}</div>
+                        <div class="small text-secondary">${esc(it.item_name || it.short_name)}${it.spec ? ' · ' + esc(it.spec) : ''}</div>
+                        ${basis ? `<div class="small text-secondary">${basis}</div>` : ''}
+                    </td>
+                    <td><input type="number" class="form-control form-control-sm text-end item-field"
+                               data-idx="${idx}" data-field="quantity" min="0" step="0.001" value="${it.quantity ?? 0}"></td>
+                    <td><input type="number" class="form-control form-control-sm text-end item-field"
+                               data-idx="${idx}" data-field="unit_price" min="0" step="0.01" value="${it.unit_price ?? 0}"></td>
+                    <td class="text-end fw-semibold item-amount">${money(it.amount)}</td>
+                    <td class="text-end">${qty(it.received_quantity)}</td>
+                    <td class="text-center"><button class="btn btn-sm btn-outline-danger item-del" data-idx="${idx}">×</button></td>
+                </tr>
+            `;
+            }).join('');
+        }
+
+        function renderItems() {
+            const items = state.po.items || [];
+            $('#poProductBody').html(productRows(items));
+            $('#poMaterialBody').html(materialRows(items));
+            recalc();
+        }
+
+        $('#poProductBody,#poMaterialBody').on('input', '.item-field', function () {
+            const idx = Number($(this).data('idx'));
+            const field = $(this).data('field');
+            const it = state.po.items[idx];
+            if (!it) return;
+
+            it[field] = Number($(this).val()) || 0;
+            it.amount = Math.round((Number(it.quantity || 0) * Number(it.unit_price || 0)) * 100) / 100;
+            $(this).closest('tr').find('.item-amount').text(money(it.amount));
+            recalc();
+
+            if (it.item_type === 'material') {
+                // 人工改过数量的材料行，之后不再被自动折算覆盖。
+                if (field === 'quantity') it.manual_quantity = true;
+                return;
+            }
+            // 产品行变了（数量归零 = 不买、新增/删除行）要重算纸箱：
+            // 纸箱数本身只跟源订单需求量有关，但"哪些 SKU 在买"变了就得重带。
+            if (field === 'quantity') scheduleMaterialRefresh();
+        });
+
+        $('#poProductBody,#poMaterialBody').on('click', '.item-del', function () {
+            const it = state.po.items[Number($(this).data('idx'))];
+            state.po.items.splice(Number($(this).data('idx')), 1);
+            renderItems();
+            if (it && it.item_type !== 'material') scheduleMaterialRefresh();
+        });
+
+        // 一键同步建议量：把每行产品的建议量（需求 − 库存 − 在途）填入采购量，整单按建议量采购。
+        $('#syncSuggestedBtn').on('click', function () {
+            const products = (state.po.items || []).filter(it => it.item_type !== 'material');
+            if (!products.length) { alert('暂无产品明细，请先载入建议或添加产品'); return; }
+            products.forEach(it => {
+                it.quantity = suggestedOf(it);
+                it.amount = Math.round(Number(it.quantity) * Number(it.unit_price || 0) * 100) / 100;
+            });
+            renderItems();
+            scheduleMaterialRefresh();
+        });
+
+        // pulledMaterials 是否已按「采购材料」带出过：带出过之后，产品明细变化会自动重算纸箱等用量。
+        let pulledMaterials = false;
+        let materialTimer = null;
+
+        function scheduleMaterialRefresh() {
+            // 没点过「采购材料」就不自动往里加行，避免用户不想采购包材时被塞行。
+            if (!pulledMaterials) return;
+            clearTimeout(materialTimer);
+            materialTimer = setTimeout(() => { pullMaterials({ silent: true }); }, 400);
+        }
+
+        // 采购材料：按**源订单需求量**带出纸箱等材料用量，方便与产品一起采购。
+        //
+        // 纸箱数 = 订单需求量 ÷ 每箱数量（单品行按个、组合行按套），与采购量无关：
+        // 客人要 2 箱、库存已有 1 箱的货、只采购 60 个时，纸箱默认仍是 2 只，
+        // 具体买几只由操作人员改（改过就不再自动折算）。
+        //
+        // options.silent            —— 静默模式，不弹提示（采购量变化后的自动重算用）
+        // options.onlyExisting      —— 只刷新已有材料行，不新增
+        // options.skipQuantityUpdate —— 只补折算依据（每箱数量），不改数量（打开已保存单据用）
+        async function pullMaterials({ silent = false, onlyExisting = false, skipQuantityUpdate = false } = {}) {
+            // 产品行只用来决定"哪些 SKU 在买"，数量不再参与纸箱折算。
+            const products = (state.po.items || []).filter(it =>
+                it.item_type !== 'material' && it.item_id && Number(it.quantity) > 0);
+            if (!products.length) {
+                if (!silent) alert('请先载入/添加产品并填写采购量，再带出材料');
+                return;
+            }
+
+            const btn = $('#purchaseMaterialBtn');
+            if (!silent) btn.prop('disabled', true).text('计算中...');
+            try {
+                const result = await $.ajax({
+                    url: `${api}/material-needs`,
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        // 纸箱按源订单的需求量一对一折算：单品行按个、组合行按套。
+                        // 没有来源订单时才退回按采购量折算。
+                        source_order_id: Number(state.po.source_order_id) || 0,
+                        items: products.map(it => ({
+                            item_type: it.item_type || 'sku',
+                            item_id: it.item_id,
+                            quantity: Number(it.quantity) || 0
+                        }))
+                    }),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '带出材料失败');
+
+                const needs = result.data || [];
+                if (!needs.length) {
+                    if (!silent) alert('没有可带出的材料：请先在「产品」里维护每箱数量 / 装箱规格，或在「用料清单」里维护用料');
+                    return;
+                }
+
+                const keep = new Set(needs.map(n => Number(n.material_id)));
+                needs.forEach(n => {
+                    const quantity = Number(n.quantity) || 0;
+                    const packPerCarton = Number(n.pack_per_carton) || 0;
+                    const existing = (state.po.items || []).find(it =>
+                        it.item_type === 'material' && Number(it.item_id) === Number(n.material_id));
+                    if (existing) {
+                        existing.pack_per_carton = packPerCarton;
+                        existing.pack_unit = n.pack_unit || '个';
+                        existing.basis = n.basis || '';
+                        existing.demand_quantity = Number(n.demand_quantity) || 0;
+                        // 人工改过数量的行保留手工值，只刷新折算依据。
+                        if (existing.manual_quantity || skipQuantityUpdate) return;
+                        existing.quantity = quantity;
+                        existing.amount = Math.round(quantity * Number(existing.unit_price || 0) * 100) / 100;
+                        return;
+                    }
+                    if (onlyExisting) return;
+                    state.po.items.push({
+                        item_type: 'material', item_id: n.material_id, item_code: n.material_code,
+                        item_name: n.material_name, short_name: n.material_name, spec: n.spec || '',
+                        unit: n.unit || 'pcs',
+                        required_quantity: 0, quantity: quantity,
+                        pack_per_carton: packPerCarton,
+                        pack_unit: n.pack_unit || '个',
+                        basis: n.basis || '',
+                        demand_quantity: Number(n.demand_quantity) || 0,
+                        // 标记为自动带出的行：口径变化后不再需要时可以自动清掉。
+                        auto_material: true,
+                        unit_price: Number(n.price) || 0,
+                        amount: Math.round(quantity * (Number(n.price) || 0) * 100) / 100,
+                        received_quantity: 0, remark: ''
+                    });
+                });
+
+                // 组合口径变了（例如取消关联订单）后不再需要的自动行直接清掉，
+                // 免得留下"其实不用买的组合纸箱"。手工加的行、数量被手工改过的行一律不动。
+                state.po.items = (state.po.items || []).filter(it =>
+                    it.item_type !== 'material' || !it.auto_material || it.manual_quantity ||
+                    keep.has(Number(it.item_id)));
+
+                pulledMaterials = true;
+                renderItems();
+            } catch (err) {
+                if (!silent) alert(err.responseJSON?.message || err.message || '带出材料失败');
+            } finally {
+                if (!silent) btn.prop('disabled', false).text('采购材料');
+            }
+        }
+
+        $('#purchaseMaterialBtn').on('click', () => pullMaterials());
+
+        // 换来源订单 = 换一套需求量，纸箱要按新订单重新带出。
+        $('#sourceOrderId').on('change', function () {
+            state.po.source_order_id = Number($(this).val()) || 0;
+            if (pulledMaterials) pullMaterials({ silent: true });
+        });
+
+        $('#addItemBtn').on('click', function () {
+            const pick = $('#itemPicker').val();
+            if (pick === '') { alert('请先选择产品或材料'); return; }
+            const it = allItems[Number(pick)];
+            state.po.items.push({
+                item_type: it.type, item_id: it.id, item_code: it.code,
+                item_name: it.name, short_name: it.name, spec: '', unit: it.unit,
+                // 手工加行没有建议量，采购量同样默认 0，由采购员按实际填写。
+                required_quantity: 0, suggested_quantity: 0, quantity: 0,
+                unit_price: it.price, amount: 0, received_quantity: 0, remark: ''
+            });
+            $('#itemPicker').val('');
+            renderItems();
+            if (it.type !== 'material') scheduleMaterialRefresh();
+        });
+
+        $('#loadSuggestionBtn').on('click', async function () {
+            const orderId = Number($('#sourceOrderId').val()) || 0;
+            if (!orderId) { alert('请先选择来源订单'); return; }
+
+            $(this).prop('disabled', true).text('载入中...');
+            try {
+                const result = await $.getJSON(`${api}/order/${orderId}/suggestion`);
+                if (!result.success) throw new Error(result.message || '载入失败');
+                const s = result.data;
+
+                if (!$('#supplierName').val() && s.customer) $('#supplierName').val(s.customer);
+                if (!$('#currency').val()) $('#currency').val(s.currency || 'CNY');
+
+                state.po.source_order_id = orderId;
+                state.po.items = (s.items || []).map(d => {
+                    // 采购量默认与建议量（需求 − 库存 − 在途）一致，采购员可再按实际修改。
+                    const suggested = Number(d.suggested_quantity) || 0;
+                    return {
+                        item_type: 'sku', item_id: d.sku_id, item_code: d.sku_code,
+                        item_name: d.short_name || d.product_name_zh || d.product_name,
+                        short_name: d.short_name || '', spec: d.model || '', unit: d.unit || 'pcs',
+                        required_quantity: Number(d.required_quantity) || 0,
+                        suggested_quantity: suggested,
+                        quantity: suggested,
+                        unit_price: Number(d.price) || 0,
+                        amount: 0, received_quantity: 0, remark: ''
+                    };
+                });
+                state.po.items.forEach(it => { it.amount = Math.round(it.quantity * it.unit_price * 100) / 100; });
+                renderItems();
+                scheduleMaterialRefresh();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '载入采购建议失败');
+            } finally {
+                $(this).prop('disabled', false).text('载入建议');
+            }
+        });
+
+        // 按「产品 / 材料」两类分别汇总数量与金额。
+        function sumOf(items, isMaterial) {
+            let quantity = 0, amount = 0, count = 0;
+            (items || []).forEach(it => {
+                if ((it.item_type === 'material') !== isMaterial) return;
+                quantity += Number(it.quantity || 0);
+                amount += Number(it.amount || 0);
+                count += 1;
+            });
+            return { quantity, amount, count };
+        }
+
+        function recalc() {
+            const items = state.po.items || [];
+            const product = sumOf(items, false);
+            const material = sumOf(items, true);
+
+            // 列表内小计（随输入实时刷新，不需要重绘表格）。
+            $('#poProductFoot').toggle(product.count > 0);
+            $('#poMaterialFoot').toggle(material.count > 0);
+            $('#sumProductQty').text(qty(product.quantity));
+            $('#sumProductAmount').text(money(product.amount));
+            $('#sumMaterialQty').text(qty(material.quantity));
+            $('#sumMaterialAmount').text(money(material.amount));
+
+            const freight = Number($('#freightAmount').val()) || 0;
+            $('#footProductAmount').text(money(product.amount));
+            $('#footMaterialAmount').text(money(material.amount));
+            $('#sumFreight').text(money(freight));
+            $('#sumTotal').text(money(product.amount + material.amount + freight));
+        }
+        $('#freightAmount').on('input', recalc);
+
+        $('#addPOBtn').on('click', async function () {
+            resetForm();
+            await loadOrders();
+            await loadItems();
+            $('#poModalTitle').text('新建采购单');
+            poModal.show();
+        });
+
+        async function openPOEditor(id) {
+            await loadOrders();
+            await loadItems();
+            const result = await $.getJSON(`${api}/${id}`);
+            if (!result.success) throw new Error(result.message || '读取失败');
+            const po = result.data;
+
+            resetForm();
+            state.po = po;
+            state.po.items = po.items || [];
+            $('#poId').val(po.id);
+            $('#sourceOrderId').val(po.source_order_id || '');
+            $('#supplierName').val(po.supplier_name || '');
+            $('#poStatus').val(po.status || 'draft');
+            $('#orderDate').val(po.order_date ? String(po.order_date).slice(0, 10) : '');
+            $('#expectedDate').val(po.expected_date ? String(po.expected_date).slice(0, 10) : '');
+            $('#currency').val(po.currency || 'CNY');
+            $('#freightAmount').val(po.freight_amount || 0);
+            $('#poRemark').val(po.remark || '');
+            renderItems();
+            $('#poModalTitle').text('编辑采购单');
+            poModal.show();
+
+            // 单据里已有材料行时补一次折算依据（只读每箱数量、不改数量），
+            // 之后改采购量才能按「采购量 ÷ 每箱数量」自动重算。
+            if ((state.po.items || []).some(it => it.item_type === 'material')) {
+                pulledMaterials = true;
+                pullMaterials({ silent: true, onlyExisting: true, skipQuantityUpdate: true });
+            }
+        }
+
+        $('#poBody').on('click', '.edit-po', async function () {
+            const id = Number($(this).data('id'));
+            try {
+                await openPOEditor(id);
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '读取采购单失败');
+            }
+        });
+
+        // 从订单下推
+        $('#pushDownBtn').on('click', async function () {
+            await loadOrders();
+            $('#pushOrderId').html($('#sourceOrderId').html());
+            $('#pushOrderId').val('');
+            pushModal.show();
+        });
+
+        $('#doPushBtn').on('click', async function () {
+            const orderId = Number($('#pushOrderId').val()) || 0;
+            if (!orderId) { alert('请选择订单'); return; }
+
+            $(this).prop('disabled', true).text('下推中...');
+            try {
+                const result = await $.ajax({
+                    url: `${api}/order/${orderId}/push`,
+                    method: 'POST',
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '下推失败');
+                pushModal.hide();
+                await loadPOList();
+                await openPOEditor(result.data.id);
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '下推采购单失败');
+            } finally {
+                $(this).prop('disabled', false).text('下推并保存');
+            }
+        });
+
+        $('#poForm').on('submit', async function (e) {
+            e.preventDefault();
+            const id = $('#poId').val();
+            const items = (state.po.items || []).filter(it => Number(it.quantity) > 0 || Number(it.required_quantity) > 0);
+            if (!items.length) { alert('请至少添加一条有效明细（采购量或需求数量大于0）'); return; }
+
+            const payload = {
+                po_number: state.po.po_number || '',
+                source_order_id: Number($('#sourceOrderId').val()) || null,
+                supplier_name: $('#supplierName').val().trim(),
+                status: $('#poStatus').val(),
+                order_date: $('#orderDate').val() || null,
+                expected_date: $('#expectedDate').val() || null,
+                currency: $('#currency').val(),
+                freight_amount: Number($('#freightAmount').val()) || 0,
+                remark: $('#poRemark').val().trim(),
+                items: items.map(it => ({
+                    id: it.id || 0,
+                    item_type: it.item_type,
+                    item_id: it.item_id || null,
+                    item_code: it.item_code,
+                    item_name: it.item_name,
+                    short_name: it.short_name || '',
+                    spec: it.spec || '',
+                    unit: it.unit || '',
+                    required_quantity: Number(it.required_quantity) || 0,
+                    quantity: Number(it.quantity) || 0,
+                    unit_price: Number(it.unit_price) || 0,
+                    remark: it.remark || ''
+                }))
+            };
+
+            $('#savePOBtn').prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: id ? `${api}/${id}` : api,
+                    method: id ? 'PUT' : 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                poModal.hide();
+                await loadPOList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '保存采购单失败');
+            } finally {
+                $('#savePOBtn').prop('disabled', false).text('保存采购单');
+            }
+        });
+
+        $('#poBody').on('click', '.print-po', function () {
+            window.open(`/purchase-orders/${$(this).data('id')}/print`, '_blank');
+        });
+
+        $('#poBody').on('click', '.screen-po', function () {
+            window.open(`/purchase-orders/${$(this).data('id')}/screen`, '_blank');
+        });
+
+        $('#screenPOBtn').on('click', function () {
+            if (!state.po || !state.po.id) { alert('请先保存采购单，再截图'); return; }
+            window.open(`/purchase-orders/${state.po.id}/screen`, '_blank');
+        });
+
+        $('#reportPOBtn').on('click', function () {
+            window.open('/purchase-orders/report', '_blank');
+        });
+
+        $('#printPOBtn').on('click', function () {
+            if (!state.po || !state.po.id) { alert('请先保存采购单，再打印单据'); return; }
+            window.open(`/purchase-orders/${state.po.id}/print`, '_blank');
+        });
+
+        // 到货登记
+        $('#poBody').on('click', '.receive-po', async function () {
+            const id = Number($(this).data('id'));
+            try {
+                const result = await $.getJSON(`${api}/${id}`);
+                if (!result.success) throw new Error(result.message || '读取失败');
+                receivePO = result.data;
+                $('#receivePONumber').text(receivePO.po_number);
+                $('#receiveBody').html((receivePO.items || []).map(it => `
+                    <tr data-item-id="${it.id}" data-quantity="${it.quantity || 0}">
+                        <td>${esc(it.item_code)} <span class="text-secondary small">${esc(it.item_name)}</span></td>
+                        <td class="text-end">${qty(it.quantity)}</td>
+                        <td class="text-end">${qty(it.received_quantity)}</td>
+                        <td><input type="number" class="form-control form-control-sm text-end receive-input"
+                                   min="0" step="0.001" value="${it.received_quantity || 0}"></td>
+                    </tr>
+                `).join(''));
+                receiveModal.show();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '读取采购单失败');
+            }
+        });
+
+        // 全部入库：把每行"本次累计入库"填为采购量，数量有出入可再手动改。
+        $('#receiveAllBtn').on('click', function () {
+            $('#receiveBody tr').each(function () {
+                $(this).find('.receive-input').val(Number($(this).data('quantity')) || 0);
+            });
+        });
+
+        $('#saveReceiveBtn').on('click', async function () {
+            if (!receivePO) return;
+            const items = $('#receiveBody tr').map(function () {
+                return {
+                    id: Number($(this).data('item-id')),
+                    received_quantity: Number($(this).find('.receive-input').val()) || 0
+                };
+            }).get();
+
+            $(this).prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: `${api}/${receivePO.id}/receive`,
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ items: items }),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                receiveModal.hide();
+                await loadPOList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '到货登记失败');
+            } finally {
+                $(this).prop('disabled', false).text('保存到货');
+            }
+        });
+
+        $('#poBody').on('click', '.delete-po', async function () {
+            const id = Number($(this).data('id'));
+            const po = poList.find(x => Number(x.id) === id);
+            if (!po) return;
+            if (!confirm(`确定删除采购单「${po.po_number}」吗？已产生的入库流水会一并撤销。`)) return;
+            try {
+                const result = await $.ajax({ url: `${api}/${id}`, method: 'DELETE', dataType: 'json' });
+                if (!result.success) throw new Error(result.message || '删除失败');
+                await loadPOList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '删除失败');
+            }
+        });
+
+        $('#searchBtn,#refreshBtn').on('click', loadPOList);
+        $('#statusFilter').on('change', loadPOList);
+        $('#keyword').on('keydown', e => { if (e.key === 'Enter') loadPOList(); });
+
+        loadPOList();
+    });
+</script>
+{{end}}

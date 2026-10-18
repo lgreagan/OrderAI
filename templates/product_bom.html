@@ -1,0 +1,300 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">产品用料（BOM）</h4>
+            <div class="text-secondary small">维护每个产品（组合套 / 单品）生产时的材料用量，「领料出库」时按此带出需求量（可再按实际损耗调整）</div>
+        </div>
+        <button class="btn btn-primary" id="addBomBtn">+ 新增用料</button>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-5">
+                    <input id="keyword" class="form-control" placeholder="搜索产品名、规则编号、材料编码/名称">
+                </div>
+                <div class="col-lg-3">
+                    <select id="typeFilter" class="form-select">
+                        <option value="">全部产品类型</option>
+                        <option value="rule">组合套</option>
+                        <option value="sku">单品</option>
+                    </select>
+                </div>
+                <div class="col-lg-4 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>产品类型</th>
+                            <th>产品</th>
+                            <th>材料编码</th>
+                            <th>材料名称</th>
+                            <th>规格</th>
+                            <th class="text-end">每单位用量</th>
+                            <th>单位</th>
+                            <th>状态</th>
+                            <th>备注</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bomBody">
+                        <tr><td colspan="9" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="bomCount"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="bomModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="bomForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="bomModalTitle">新增用料</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="bomId">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">产品类型 *</label>
+                            <select class="form-select" id="productType">
+                                <option value="rule">组合套</option>
+                                <option value="sku">单品</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">产品 *</label>
+                            <select class="form-select" id="productRefId"></select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">材料 *</label>
+                            <select class="form-select" id="materialId"></select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">每单位用量 *</label>
+                            <input type="number" class="form-control" id="quantityPerUnit" min="0.0001" step="0.0001" value="1">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">单位</label>
+                            <input class="form-control" id="unit" maxlength="30" placeholder="pcs">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" id="bomStatus">
+                                <option value="active">启用</option>
+                                <option value="inactive">停用</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">备注</label>
+                            <input class="form-control" id="bomRemark" maxlength="500">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="saveBomBtn">保存用料</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const api = '/api/product-bom';
+        const modal = new bootstrap.Modal(document.getElementById('bomModal'));
+        let bomList = [];
+        let ruleOptions = [];
+        let skuOptions = [];
+        let materialOptions = [];
+        let optionsLoaded = false;
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+        const typeLabel = t => t === 'sku' ? '单品' : '组合套';
+
+        async function loadBomList() {
+            $('#bomBody').html('<tr><td colspan="9" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON(api, {
+                    product_type: $('#typeFilter').val(),
+                    keyword: $('#keyword').val().trim()
+                });
+                if (!result.success) throw new Error(result.message || '读取失败');
+                bomList = result.data || [];
+                if (!bomList.length) {
+                    $('#bomBody').html('<tr><td colspan="10" class="text-center text-secondary py-4">暂无用料记录</td></tr>');
+                    $('#bomCount').text('共 0 条用料记录');
+                    return;
+                }
+                $('#bomBody').html(bomList.map(b => `
+                    <tr>
+                        <td>${typeLabel(b.product_type)}</td>
+                        <td>${esc(b.product_name)}</td>
+                        <td class="fw-semibold">${esc(b.material_code)}</td>
+                        <td>${esc(b.material_name)}</td>
+                        <td>${esc(b.material_spec)}</td>
+                        <td class="text-end">${Number(b.quantity_per_unit)}</td>
+                        <td>${esc(b.unit)}</td>
+                        <td>${b.status === 'active' ? '<span class="badge text-bg-success">启用</span>' : '<span class="badge text-bg-secondary">停用</span>'}</td>
+                        <td>${esc(b.remark)}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary edit-bom" data-id="${b.id}">编辑</button>
+                            <button class="btn btn-sm btn-outline-danger delete-bom" data-id="${b.id}">删除</button>
+                        </td>
+                    </tr>
+                `).join(''));
+                $('#bomCount').text(`共 ${bomList.length} 条用料记录`);
+            } catch (err) {
+                $('#bomBody').html(
+                    `<tr><td colspan="9" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadOptions() {
+            if (optionsLoaded) return;
+            try {
+                const [rules, skus, mats] = await Promise.all([
+                    $.getJSON('/api/product-match-rules'),
+                    $.getJSON('/api/skus', {}),
+                    $.getJSON('/api/materials', {})
+                ]);
+                ruleOptions = (rules.data || []).map(r => ({
+                    id: r.id, label: `${r.rule_code} ${r.product_name_zh || r.customer_product_name || ''}`
+                }));
+                skuOptions = (skus.data || []).map(s => ({
+                    id: s.id, label: `${s.sku_code} ${s.short_name || s.product_name_zh || s.product_name || ''}`
+                }));
+                materialOptions = (mats.data || []).map(m => ({
+                    id: m.id, code: m.code, label: `${m.code} ${m.short_name || m.name_zh || m.name || ''}`, unit: m.unit || 'pcs'
+                }));
+                $('#materialId').html(materialOptions.map(m =>
+                    `<option value="${m.id}">${esc(m.label)}</option>`).join(''));
+                optionsLoaded = true;
+            } catch (err) { /* 忽略 */ }
+        }
+
+        function refreshProductSelect() {
+            const type = $('#productType').val();
+            const list = type === 'sku' ? skuOptions : ruleOptions;
+            $('#productRefId').html(list.map(o =>
+                `<option value="${o.id}">${esc(o.label)}</option>`).join(''));
+        }
+
+        $('#productType').on('change', refreshProductSelect);
+
+        function resetForm() {
+            $('#bomForm')[0].reset();
+            $('#bomId').val('');
+            $('#productType').val('rule');
+            $('#quantityPerUnit').val('1');
+            $('#bomStatus').val('active');
+            refreshProductSelect();
+        }
+
+        $('#addBomBtn').on('click', async function () {
+            await loadOptions();
+            resetForm();
+            $('#bomModalTitle').text('新增用料');
+            modal.show();
+        });
+
+        $('#bomBody').on('click', '.edit-bom', async function () {
+            const id = Number($(this).data('id'));
+            try {
+                await loadOptions();
+                const result = await $.getJSON(`${api}/${id}`);
+                if (!result.success) throw new Error(result.message || '读取失败');
+                const b = result.data;
+
+                resetForm();
+                $('#bomId').val(b.id);
+                $('#productType').val(b.product_type);
+                refreshProductSelect();
+                $('#productRefId').val(b.product_ref_id);
+                $('#materialId').val(b.material_id);
+                $('#quantityPerUnit').val(b.quantity_per_unit);
+                $('#unit').val(b.unit);
+                $('#bomStatus').val(b.status || 'active');
+                $('#bomRemark').val(b.remark || '');
+                $('#bomModalTitle').text('编辑用料');
+                modal.show();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '读取用料失败');
+            }
+        });
+
+        $('#bomForm').on('submit', async function (e) {
+            e.preventDefault();
+            const id = $('#bomId').val();
+            const payload = {
+                product_type: $('#productType').val(),
+                product_ref_id: Number($('#productRefId').val()) || 0,
+                material_id: Number($('#materialId').val()) || 0,
+                quantity_per_unit: Number($('#quantityPerUnit').val()) || 0,
+                unit: $('#unit').val().trim(),
+                status: $('#bomStatus').val(),
+                remark: $('#bomRemark').val().trim()
+            };
+
+            if (!payload.product_ref_id) { alert('请选择产品'); return; }
+            if (!payload.material_id) { alert('请选择材料'); return; }
+            if (payload.quantity_per_unit <= 0) { alert('每单位用量必须大于0'); return; }
+
+            $('#saveBomBtn').prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: id ? `${api}/${id}` : api,
+                    method: id ? 'PUT' : 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                modal.hide();
+                await loadBomList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '保存用料失败');
+            } finally {
+                $('#saveBomBtn').prop('disabled', false).text('保存用料');
+            }
+        });
+
+        $('#bomBody').on('click', '.delete-bom', async function () {
+            const id = Number($(this).data('id'));
+            if (!confirm('确定删除这条用料记录吗？')) return;
+            try {
+                const result = await $.ajax({ url: `${api}/${id}`, method: 'DELETE', dataType: 'json' });
+                if (!result.success) throw new Error(result.message || '删除失败');
+                await loadBomList();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '删除失败');
+            }
+        });
+
+        $('#searchBtn,#refreshBtn').on('click', loadBomList);
+        $('#typeFilter').on('change', loadBomList);
+        $('#keyword').on('keydown', e => { if (e.key === 'Enter') loadBomList(); });
+
+        loadBomList();
+    });
+</script>
+{{end}}

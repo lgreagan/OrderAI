@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .title}}{{.title}}{{else}}采购报表 - OrderAI{{end}}</title>
+    <style>
+        :root { --line: #d8dee9; --muted: #6b7280; --brand: #5268d5; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 18px;
+            background: #f4f6fa;
+            color: #1f2937;
+            font: 13px/1.5 "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+        }
+        .sheet {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14mm 12mm;
+        }
+        .toolbar {
+            max-width: 210mm;
+            margin: 0 auto 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+        .toolbar .grow { flex: 1; display: flex; gap: 8px; justify-content: flex-start; }
+        .btn {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: #1f2937;
+            border-radius: 6px;
+            padding: 7px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+        input.f, select.f {
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 6px 9px;
+            font-size: 13px;
+            background: #fff;
+        }
+
+        h1 { font-size: 20px; margin: 0 0 6px; }
+        h2 { font-size: 15px; margin: 20px 0 8px; }
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 14px;
+            color: var(--muted);
+            font-size: 12px;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 8px 0;
+            margin-bottom: 12px;
+        }
+        .meta span b { color: #1f2937; font-weight: 600; }
+
+        .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+        .stat {
+            flex: 1 1 130px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 8px 10px;
+            color: var(--muted);
+            font-size: 11.5px;
+        }
+        .stat b { display: block; color: #1f2937; font-size: 17px; font-weight: 700; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: middle; }
+        thead th { background: #f1f4f9; font-weight: 600; text-align: left; }
+        td.num, th.num { text-align: right; white-space: nowrap; }
+        tbody tr:nth-child(even) { background: #fbfcfe; }
+        tr.total td { font-weight: 700; background: #fafbfe; }
+        .muted { color: var(--muted); }
+        .small { font-size: 11.5px; }
+        .cell-name { font-weight: 600; }
+        .cell-sub { color: var(--muted); font-size: 11.5px; }
+        .note { margin-top: 10px; color: var(--muted); font-size: 11.5px; }
+        .foot {
+            margin-top: 16px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .badge {
+            display: inline-block; padding: 1px 8px; border-radius: 10px;
+            font-size: 11.5px; background: #eef1fb; color: #3b4fd8;
+        }
+        .empty { padding: 30px; text-align: center; color: var(--muted); }
+        .link { color: var(--brand); text-decoration: none; }
+
+        @page { size: A4 portrait; margin: 12mm; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .toolbar { display: none !important; }
+            .sheet { border: 0; border-radius: 0; padding: 0; max-width: none; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; }
+            .link { color: inherit; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="grow">
+            <input class="f" id="keyword" type="text" placeholder="单号 / 供应商 / 订单号" style="width:210px">
+            <select class="f" id="status">
+                <option value="">全部状态</option>
+                <option value="draft">草稿</option>
+                <option value="ordered">已下单</option>
+                <option value="partial">部分到货</option>
+                <option value="received">已到货</option>
+                <option value="cancelled">已取消</option>
+            </select>
+            <button class="btn" id="queryBtn">查询</button>
+        </div>
+        <button class="btn" id="backBtn">返回</button>
+        <button class="btn btn-primary" id="printBtn">打印 / 保存为 PDF</button>
+    </div>
+
+    <div class="sheet" id="sheet">
+        <div class="empty">正在加载…</div>
+    </div>
+
+<script>
+    var STATUS = {
+        draft: '草稿', ordered: '已下单', partial: '部分到货',
+        received: '已到货', cancelled: '已取消'
+    };
+
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function qty(v) { return Number(v || 0).toFixed(3).replace(/\.?0+$/, ''); }
+    function money(v) { return Number(v || 0).toFixed(2); }
+    function int(v) { return Number(v || 0).toLocaleString('en-US'); }
+    function day(v) { return v ? String(v).slice(0, 10) : ''; }
+
+    function params() {
+        var q = [];
+        var kw = document.getElementById('keyword').value.trim();
+        var st = document.getElementById('status').value;
+        if (kw) q.push('keyword=' + encodeURIComponent(kw));
+        if (st) q.push('status=' + encodeURIComponent(st));
+        return q.length ? '?' + q.join('&') : '';
+    }
+
+    async function load() {
+        var sheet = document.getElementById('sheet');
+        sheet.innerHTML = '<div class="empty">正在加载…</div>';
+
+        try {
+            var qs = params();
+            var res = await Promise.all([
+                fetch('/api/purchase-orders' + qs).then(function (r) { return r.json(); }),
+                fetch('/api/purchase-orders/report/items' + qs).then(function (r) { return r.json(); })
+            ]);
+            if (!res[0].success) throw new Error(res[0].message || '读取采购单失败');
+            if (!res[1].success) throw new Error(res[1].message || '读取采购汇总失败');
+            render(res[0].data || [], res[1].data || []);
+        } catch (err) {
+            sheet.innerHTML = '<div class="empty">' + esc(err.message || '读取失败') + '</div>';
+        }
+    }
+
+    function render(list, items) {
+        var freight = 0, goods = 0, total = 0;
+        list.forEach(function (po) {
+            goods += Number(po.goods_amount || 0);
+            freight += Number(po.freight_amount || 0);
+            total += Number(po.total_amount || 0);
+        });
+
+        var currency = (list.length && list[0].currency) ? list[0].currency : 'CNY';
+
+        var poRows = list.map(function (po) {
+            var progress = po.item_count ? (po.received_count + '/' + po.item_count) : '—';
+            return '<tr>'
+                + '<td><a class="link" href="/purchase-orders/' + po.id + '/print" target="_blank">'
+                + '<span class="cell-name">' + esc(po.po_number) + '</span></a>'
+                + '<div class="cell-sub">' + esc(po.supplier_name || '未填供应商') + '</div></td>'
+                + '<td>' + esc(po.source_order_number || '—') + '</td>'
+                + '<td>' + esc(day(po.order_date) || '—') + '</td>'
+                + '<td>' + esc(day(po.expected_date) || '—') + '</td>'
+                + '<td><span class="badge">' + esc(STATUS[po.status] || po.status) + '</span></td>'
+                + '<td class="num">' + po.item_count + '</td>'
+                + '<td class="num">' + money(po.goods_amount) + '</td>'
+                + '<td class="num">' + money(po.freight_amount) + '</td>'
+                + '<td class="num">' + money(po.total_amount) + '</td>'
+                + '<td class="num">' + progress + '</td>'
+                + '</tr>';
+        }).join('');
+        if (!poRows) poRows = '<tr><td colspan="10" class="empty">没有符合条件的采购单</td></tr>';
+
+        var itemRows = items.map(function (it) {
+            var gap = Number(it.quantity || 0) - Number(it.received_quantity || 0);
+            return '<tr>'
+                + '<td><div class="cell-name">' + esc(it.item_code) + '</div>'
+                + '<div class="cell-sub">' + esc(it.item_name) + (it.spec ? ' · ' + esc(it.spec) : '') + '</div></td>'
+                + '<td>' + (it.item_type === 'material' ? '材料' : '产品') + '</td>'
+                + '<td class="num">' + qty(it.required_quantity) + '</td>'
+                + '<td class="num">' + qty(it.quantity) + '</td>'
+                + '<td>' + esc(it.unit) + '</td>'
+                + '<td class="num">' + qty(it.received_quantity) + '</td>'
+                + '<td class="num">' + (gap > 0 ? qty(gap) : '0') + '</td>'
+                + '<td class="num">' + money(it.amount) + '</td>'
+                + '</tr>';
+        }).join('');
+        if (!itemRows) itemRows = '<tr><td colspan="8" class="empty">没有采购明细</td></tr>';
+
+        var stats = [
+            ['采购单数', list.length],
+            ['明细行数', items.length],
+            ['货款合计', money(goods) + ' ' + currency],
+            ['运费合计', money(freight) + ' ' + currency],
+            ['采购合计', money(total) + ' ' + currency]
+        ].map(function (kv) {
+            return '<div class="stat">' + esc(kv[0]) + '<b>' + esc(kv[1]) + '</b></div>';
+        }).join('');
+
+        document.getElementById('sheet').innerHTML = ''
+            + '<h1>采购报表 <span class="muted small">采购订单汇总</span></h1>'
+            + '<div class="meta">'
+            + '<span>统计范围：<b>' + esc(document.getElementById('status').value
+                ? (STATUS[document.getElementById('status').value] || '全部') : '全部状态') + '</b></span>'
+            + '<span>关键字：<b>' + esc(document.getElementById('keyword').value.trim() || '—') + '</b></span>'
+            + '</div>'
+            + '<div class="stats">' + stats + '</div>'
+            + '<h2>一、采购单汇总</h2>'
+            + '<table><thead><tr>'
+            + '<th>采购单 / 供应商</th><th style="width:80px">来源订单</th>'
+            + '<th style="width:82px">下单日期</th><th style="width:82px">预计到货</th>'
+            + '<th style="width:70px">状态</th>'
+            + '<th class="num" style="width:52px">行数</th>'
+            + '<th class="num" style="width:88px">货款</th>'
+            + '<th class="num" style="width:76px">运费</th>'
+            + '<th class="num" style="width:92px">合计</th>'
+            + '<th class="num" style="width:64px">到货行</th>'
+            + '</tr></thead>'
+            + '<tbody>' + poRows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td colspan="6">合计（' + list.length + ' 张采购单）</td>'
+            + '<td class="num">' + money(goods) + '</td>'
+            + '<td class="num">' + money(freight) + '</td>'
+            + '<td class="num">' + money(total) + '</td>'
+            + '<td></td>'
+            + '</tr></tfoot></table>'
+            + '<h2>二、物品采购汇总（按物品合计）</h2>'
+            + '<table><thead><tr>'
+            + '<th>物品</th><th style="width:56px">类型</th>'
+            + '<th class="num" style="width:76px">客户需求</th>'
+            + '<th class="num" style="width:76px">采购数量</th>'
+            + '<th style="width:48px">单位</th>'
+            + '<th class="num" style="width:76px">已入库</th>'
+            + '<th class="num" style="width:76px">未到货</th>'
+            + '<th class="num" style="width:100px">金额</th>'
+            + '</tr></thead>'
+            + '<tbody>' + itemRows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td colspan="7">金额合计</td>'
+            + '<td class="num">' + money(items.reduce(function (s, it) {
+                return s + Number(it.amount || 0);
+            }, 0)) + '</td>'
+            + '</tr></tfoot></table>'
+            + '<div class="note">采购数量可与客户需求不一致（凑量拿折扣），超出部分到货入库后即为库存；'
+            + '「未到货」＝ 采购数量 − 已入库数量，供跟单催货参考。点击采购单号可打开该单的打印页。</div>'
+            + '<div class="foot"><span>OrderAI · 采购报表</span><span>打印时间：'
+            + new Date().toLocaleString('zh-CN') + '</span></div>';
+    }
+
+    document.getElementById('queryBtn').addEventListener('click', load);
+    document.getElementById('keyword').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') load();
+    });
+    document.getElementById('printBtn').addEventListener('click', function () { window.print(); });
+    document.getElementById('backBtn').addEventListener('click', function () {
+        window.location.href = '/purchase-orders';
+    });
+
+    load();
+</script>
+</body>
+</html>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .title}}{{.title}}{{else}}生产报表 - OrderAI{{end}}</title>
+    <style>
+        :root { --line: #d8dee9; --muted: #6b7280; --brand: #5268d5; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 18px;
+            background: #f4f6fa;
+            color: #1f2937;
+            font: 13px/1.5 "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+        }
+        .sheet {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14mm 12mm;
+        }
+        .toolbar {
+            max-width: 210mm;
+            margin: 0 auto 12px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+        .toolbar .grow { flex: 1; display: flex; gap: 8px; justify-content: flex-start; }
+        .btn {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: #1f2937;
+            border-radius: 6px;
+            padding: 7px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+        input.f, select.f {
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 6px 9px;
+            font-size: 13px;
+            background: #fff;
+        }
+
+        h1 { font-size: 20px; margin: 0 0 6px; }
+        h2 { font-size: 15px; margin: 20px 0 8px; }
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 14px;
+            color: var(--muted);
+            font-size: 12px;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 8px 0;
+            margin-bottom: 12px;
+        }
+        .meta span b { color: #1f2937; font-weight: 600; }
+
+        .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+        .stat {
+            flex: 1 1 120px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 8px 10px;
+            color: var(--muted);
+            font-size: 11.5px;
+        }
+        .stat b { display: block; color: #1f2937; font-size: 17px; font-weight: 700; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: middle; }
+        thead th { background: #f1f4f9; font-weight: 600; text-align: left; }
+        td.num, th.num { text-align: right; white-space: nowrap; }
+        tbody tr:nth-child(even) { background: #fbfcfe; }
+        tr.total td { font-weight: 700; background: #fafbfe; }
+        .muted { color: var(--muted); }
+        .small { font-size: 11.5px; }
+        .cell-name { font-weight: 600; }
+        .cell-sub { color: var(--muted); font-size: 11.5px; }
+        .note { margin-top: 10px; color: var(--muted); font-size: 11.5px; }
+        .foot {
+            margin-top: 16px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .badge {
+            display: inline-block; padding: 1px 8px; border-radius: 10px;
+            font-size: 11.5px; background: #eef1fb; color: #3b4fd8;
+        }
+        .empty { padding: 30px; text-align: center; color: var(--muted); }
+        .link { color: var(--brand); text-decoration: none; }
+
+        @page { size: A4 portrait; margin: 12mm; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .toolbar { display: none !important; }
+            .sheet { border: 0; border-radius: 0; padding: 0; max-width: none; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; }
+            .link { color: inherit; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="grow">
+            <input class="f" id="keyword" type="text" placeholder="生产单号 / 订单号 / 客户" style="width:210px">
+            <select class="f" id="status">
+                <option value="">全部状态</option>
+                <option value="draft">草稿</option>
+                <option value="producing">生产中</option>
+                <option value="completed">已完工</option>
+                <option value="cancelled">已取消</option>
+            </select>
+            <button class="btn" id="queryBtn">查询</button>
+        </div>
+        <button class="btn" id="backBtn">返回</button>
+        <button class="btn btn-primary" id="printBtn">打印 / 保存为 PDF</button>
+    </div>
+
+    <div class="sheet" id="sheet">
+        <div class="empty">正在加载…</div>
+    </div>
+
+<script>
+    var STATUS = {
+        draft: '草稿', producing: '生产中', completed: '已完工', cancelled: '已取消'
+    };
+
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function qty(v) { return Number(v || 0).toFixed(3).replace(/\.?0+$/, ''); }
+    function day(v) { return v ? String(v).slice(0, 10) : ''; }
+
+    function params() {
+        var q = [];
+        var kw = document.getElementById('keyword').value.trim();
+        var st = document.getElementById('status').value;
+        if (kw) q.push('keyword=' + encodeURIComponent(kw));
+        if (st) q.push('status=' + encodeURIComponent(st));
+        return q.length ? '?' + q.join('&') : '';
+    }
+
+    async function load() {
+        var sheet = document.getElementById('sheet');
+        sheet.innerHTML = '<div class="empty">正在加载…</div>';
+
+        try {
+            var qs = params();
+            var res = await Promise.all([
+                fetch('/api/production-orders' + qs).then(function (r) { return r.json(); }),
+                fetch('/api/production-orders/report/materials' + qs).then(function (r) { return r.json(); })
+            ]);
+            if (!res[0].success) throw new Error(res[0].message || '读取生产单失败');
+            if (!res[1].success) throw new Error(res[1].message || '读取用料汇总失败');
+            render(res[0].data || [], res[1].data || []);
+        } catch (err) {
+            sheet.innerHTML = '<div class="empty">' + esc(err.message || '读取失败') + '</div>';
+        }
+    }
+
+    function render(list, materials) {
+        var lines = 0, doneLines = 0, cartons = 0, completed = 0;
+        list.forEach(function (mo) {
+            lines += Number(mo.item_count || 0);
+            doneLines += Number(mo.completed_count || 0);
+            cartons += Number(mo.total_cartons || 0);
+            if (mo.status === 'completed') completed += 1;
+        });
+
+        var moRows = list.map(function (mo) {
+            var progress = mo.item_count ? (mo.completed_count + '/' + mo.item_count) : '—';
+            return '<tr>'
+                + '<td><a class="link" href="/production-orders/' + mo.id + '/print" target="_blank">'
+                + '<span class="cell-name">' + esc(mo.po_number) + '</span></a></td>'
+                + '<td>' + esc(mo.source_order_number || '—') + '</td>'
+                + '<td>' + esc(day(mo.plan_date) || '—') + '</td>'
+                + '<td>' + esc(day(mo.start_date) || '—') + '</td>'
+                + '<td>' + esc(day(mo.finish_date) || '—') + '</td>'
+                + '<td><span class="badge">' + esc(STATUS[mo.status] || mo.status) + '</span></td>'
+                + '<td class="num">' + mo.item_count + '</td>'
+                + '<td class="num">' + qty(mo.total_cartons) + '</td>'
+                + '<td class="num">' + progress + '</td>'
+                + '</tr>';
+        }).join('');
+        if (!moRows) moRows = '<tr><td colspan="9" class="empty">没有符合条件的生产单</td></tr>';
+
+        var matRows = materials.map(function (m) {
+            return '<tr>'
+                + '<td><div class="cell-name">' + esc(m.material_code) + '</div>'
+                + '<div class="cell-sub">' + esc(m.material_name) + '</div></td>'
+                + '<td>' + esc(m.spec || '—') + '</td>'
+                + '<td class="num">' + qty(m.required_quantity) + '</td>'
+                + '<td>' + esc(m.unit) + '</td>'
+                + '<td class="num">' + m.product_count + '</td>'
+                + '</tr>';
+        }).join('');
+        if (!matRows) matRows = '<tr><td colspan="5" class="empty">没有可汇总的用料（生产单明细尚未维护用料）</td></tr>';
+
+        var stats = [
+            ['生产单数', list.length],
+            ['其中已完工', completed],
+            ['明细行数', lines],
+            ['合计箱数', qty(cartons)],
+            ['材料项数', materials.length]
+        ].map(function (kv) {
+            return '<div class="stat">' + esc(kv[0]) + '<b>' + esc(kv[1]) + '</b></div>';
+        }).join('');
+
+        document.getElementById('sheet').innerHTML = ''
+            + '<h1>生产报表 <span class="muted small">生产订单汇总与备料</span></h1>'
+            + '<div class="meta">'
+            + '<span>统计范围：<b>' + esc(document.getElementById('status').value
+                ? (STATUS[document.getElementById('status').value] || '全部') : '全部状态') + '</b></span>'
+            + '<span>关键字：<b>' + esc(document.getElementById('keyword').value.trim() || '—') + '</b></span>'
+            + '<span>完工进度：<b>' + doneLines + ' / ' + lines + ' 行</b></span>'
+            + '</div>'
+            + '<div class="stats">' + stats + '</div>'
+            + '<h2>一、生产单汇总</h2>'
+            + '<table><thead><tr>'
+            + '<th>生产单号</th><th style="width:80px">来源订单</th>'
+            + '<th style="width:82px">计划日期</th><th style="width:82px">开始日期</th>'
+            + '<th style="width:82px">完工日期</th><th style="width:70px">状态</th>'
+            + '<th class="num" style="width:60px">明细行</th>'
+            + '<th class="num" style="width:60px">箱数</th>'
+            + '<th class="num" style="width:70px">完工行</th>'
+            + '</tr></thead>'
+            + '<tbody>' + moRows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td colspan="6">合计（' + list.length + ' 张生产单）</td>'
+            + '<td class="num">' + lines + '</td>'
+            + '<td class="num">' + qty(cartons) + '</td>'
+            + '<td class="num">' + doneLines + '</td>'
+            + '</tr></tfoot></table>'
+            + '<h2>二、用料汇总（按计划量折算，供备料/领料）</h2>'
+            + '<table><thead><tr>'
+            + '<th>材料</th><th style="width:130px">规格</th>'
+            + '<th class="num" style="width:96px">需求数量</th>'
+            + '<th style="width:52px">单位</th>'
+            + '<th class="num" style="width:76px">涉及产品</th>'
+            + '</tr></thead>'
+            + '<tbody>' + matRows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td colspan="2">材料种类合计</td>'
+            + '<td class="num">—</td><td></td>'
+            + '<td class="num">' + materials.length + '</td>'
+            + '</tr></tfoot></table>'
+            + '<div class="note">用料需求 = 生产单计划量 × 产品单位用量（纸箱等由装箱信息下推，可在「产品用料」页维护）；'
+            + '点击生产单号可打开该单的打印页（含逐行用料清单）。</div>'
+            + '<div class="foot"><span>OrderAI · 生产报表</span><span>打印时间：'
+            + new Date().toLocaleString('zh-CN') + '</span></div>';
+    }
+
+    document.getElementById('queryBtn').addEventListener('click', load);
+    document.getElementById('keyword').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') load();
+    });
+    document.getElementById('printBtn').addEventListener('click', function () { window.print(); });
+    document.getElementById('backBtn').addEventListener('click', function () {
+        window.location.href = '/production-orders';
+    });
+
+    load();
+</script>
+</body>
+</html>

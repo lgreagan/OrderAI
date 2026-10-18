@@ -1,0 +1,862 @@
+{{define "content"}}
+    <style>
+        body {
+            background: #f5f6fa;
+            color: #263247;
+            font-size: 14px;
+        }
+        .page {
+            max-width: 1500px;
+            margin: 30px auto;
+            padding: 0 22px;
+        }
+        .panel {
+            background: #fff;
+            border: 1px solid #e8ebf1;
+            border-radius: 12px;
+            padding: 22px;
+            margin-bottom: 18px;
+        }
+        .page-title {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .muted {
+            color: #8490a3;
+        }
+        .rule-code {
+            font-family: Consolas, monospace;
+            color: #5368d5;
+        }
+        .status-active {
+            color: #14804a;
+            background: #e6f7ee;
+        }
+        .status-inactive {
+            color: #667085;
+            background: #eef0f4;
+        }
+        .status-warning {
+            color: #a15c00;
+            background: #fff2d7;
+        }
+        .status-pill {
+            display: inline-block;
+            border-radius: 20px;
+            padding: 4px 10px;
+            font-size: 12px;
+        }
+        .table > :not(caption) > * > * {
+            padding: 14px 12px;
+            vertical-align: middle;
+        }
+        .detail-row {
+            background: #f8faff;
+        }
+        .detail-box {
+            padding: 15px 18px;
+            border-left: 3px solid #6479df;
+        }
+        .empty-state {
+            padding: 45px 10px;
+            color: #8490a3;
+            text-align: center;
+        }
+        .btn-primary {
+            background: #5268d5;
+            border-color: #5268d5;
+        }
+        .btn-primary:hover {
+            background: #4358bd;
+            border-color: #4358bd;
+        }
+        .loading {
+            padding: 35px;
+            text-align: center;
+            color: #8490a3;
+        }
+        .rule-name {
+            font-weight: 600;
+            color: #263247;
+        }
+        .composition-item {
+            padding: 10px 0;
+            border-bottom: 1px solid #e9edf4;
+        }
+        .composition-item:last-child {
+            border-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div>
+            <div class="page-title">组合 SKU 匹配规则</div>
+            <div class="muted mt-2">
+                将客户订单中的组合商品映射为实际单品 SKU，供后续采购与生产统计使用。
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/products" class="btn btn-outline-secondary">单品 SKU 管理</a>
+            <button class="btn btn-primary" type="button"
+                    onclick="openCreateRuleModal()">
+                + 新建组合规则
+            </button>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-6">
+                <label for="keyword" class="form-label">搜索规则</label>
+                <input id="keyword" class="form-control"
+                       placeholder="输入规则编号、客户商品名称或规格">
+            </div>
+            <div class="col-md-3">
+                <label for="statusFilter" class="form-label">规则状态</label>
+                <select id="statusFilter" class="form-select">
+                    <option value="">全部状态</option>
+                    <option value="active">已启用</option>
+                    <option value="inactive">已停用</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button class="btn btn-primary flex-fill" onclick="loadRules()">
+                    查询
+                </button>
+                <button class="btn btn-outline-secondary flex-fill"
+                        onclick="resetFilters()">
+                    重置
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <strong>规则列表</strong>
+                <span class="muted ms-2" id="totalCount">共 0 条</span>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary"
+                    onclick="loadRules()">刷新</button>
+        </div>
+        <div id="messageArea"></div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                <tr>
+                    <th style="min-width:150px">规则编号</th>
+                    <th style="min-width:160px">产品中文名</th>
+                    <th>订单单位</th>
+                    <th>每箱套数</th>
+                    <th>每箱重量(kg)</th>
+                    <th>长(cm)</th>
+                    <th>宽(cm)</th>
+                    <th>高(cm)</th>
+                    <th>组成 SKU</th>
+                    <th>状态</th>
+                    <th style="min-width:240px">操作</th>
+                </tr>
+                </thead>
+                <tbody id="rulesBody">
+                <tr>
+                    <td colspan="11" class="loading">正在读取组合规则...</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="muted small">
+        OrderAI · 组合商品匹配管理
+    </div>
+</div>
+<div class="modal fade" id="ruleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="ruleForm" autocomplete="off">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="ruleModalTitle">新建组合规则</h5>
+                    <button type="button" class="btn-close"
+                            data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label" for="ruleCode">规则编号 *</label>
+                            <input id="ruleCode" class="form-control" required
+                                   maxlength="100" placeholder="如 RULE-001">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label" for="ruleProductName">
+                                客户商品名称 *
+                            </label>
+                            <input id="ruleProductName" class="form-control" required
+                                   maxlength="255"
+                                   placeholder="客户订单上的组合商品名称">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label" for="ruleSpecification">
+                                客户规格
+                            </label>
+                            <input id="ruleSpecification" class="form-control"
+                                   maxlength="255"
+                                   placeholder="按订单原始规格匹配">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label" for="ruleProductNameZH">
+                                产品中文名
+                            </label>
+                            <input id="ruleProductNameZH" class="form-control"
+                                   maxlength="255"
+                                   placeholder="组合商品的中文名称">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label" for="ruleOrderUnit">订单单位</label>
+                            <input id="ruleOrderUnit" class="form-control"
+                                   maxlength="30" value="套">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label" for="ruleSetsPerCarton">
+                                每箱套数 *
+                            </label>
+                            <input id="ruleSetsPerCarton" type="number"
+                                   class="form-control" min="0.001" step="0.001"
+                                   value="40" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label" for="ruleCartonWeight">
+                                每箱重量(kg)
+                            </label>
+                            <input id="ruleCartonWeight" type="number"
+                                   class="form-control" min="0" step="0.001"
+                                   value="0">
+                        </div>
+                        <!-- 替换原来carton_size输入框，改为长宽高 -->
+                        <div class="col-md-2">
+                            <label class="form-label" for="ruleBoxLength">长(cm)</label>
+                            <input id="ruleBoxLength" type="number" class="form-control" min="0" step="0.01" value="0.00">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label" for="ruleBoxWidth">宽(cm)</label>
+                            <input id="ruleBoxWidth" type="number" class="form-control" min="0" step="0.01" value="0.00">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label" for="ruleBoxHeight">高(cm)</label>
+                            <input id="ruleBoxHeight" type="number" class="form-control" min="0" step="0.01" value="0.00">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label" for="ruleStatus">状态</label>
+                            <select id="ruleStatus" class="form-select">
+                                <option value="active">启用</option>
+                                <option value="inactive">停用</option>
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label" for="ruleRemark">备注</label>
+                            <input id="ruleRemark" class="form-control"
+                                   maxlength="500">
+                        </div>
+                    </div>
+                    <hr class="my-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <strong>组成单品</strong>
+                            <span class="muted small ms-2">
+                                选择该组合商品包含的单品 SKU 及每套数量
+                            </span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" type="button"
+                                onclick="addRuleItemRow()">
+                            + 添加单品
+                        </button>
+                    </div>
+                    <div class="row g-2 muted small d-none d-md-flex" id="ruleItemHeader">
+                        <div class="col-md-6">单品 SKU</div>
+                        <div class="col-md-3">每套数量</div>
+                        <div class="col-md-2">备注</div>
+                        <div class="col-md-1"></div>
+                    </div>
+                    <div id="ruleItemRows"></div>
+                    <div class="muted small mt-2" id="ruleItemSummary"></div>
+                </div>
+                <div class="modal-footer">
+                    <div class="me-auto small" id="ruleModalMessage"></div>
+                    <button type="button" class="btn btn-outline-secondary"
+                            data-bs-dismiss="modal">
+                        取消
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="saveRuleBtn">
+                        保存组合规则
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+let currentRules = [];
+let skuOptions = [];
+let ruleModalInstance = null;
+let editingRuleId = 0;
+function escapeHTML(value) {
+    return String(value ?? '').replace(/[&<>"']/g, function (ch) {
+        return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[ch];
+    });
+}
+function showMessage(message, type = 'danger') {
+    document.getElementById('messageArea').innerHTML =
+        `<div class="alert alert-${type} py-2">${escapeHTML(message)}</div>`;
+}
+async function loadRules() {
+    const body = document.getElementById('rulesBody');
+    const keyword = document.getElementById('keyword').value.trim();
+    const status = document.getElementById('statusFilter').value;
+    document.getElementById('messageArea').innerHTML = '';
+    body.innerHTML =
+        '<tr><td colspan="11" class="loading">正在读取组合规则...</td></tr>';
+    const params = new URLSearchParams({ keyword, status });
+    try {
+        const response = await fetch(
+            '/api/product-match-rules?' + params.toString()
+        );
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || '读取规则失败');
+        }
+        currentRules = result.data || [];
+        document.getElementById('totalCount').textContent =
+            `共 ${result.total ?? currentRules.length} 条`;
+        renderRules();
+    } catch (error) {
+        body.innerHTML =
+            '<tr><td colspan="11" class="empty-state">规则加载失败</td></tr>';
+        showMessage(error.message || '请求失败，请检查服务器日志');
+    }
+}
+function renderRules() {
+    const body = document.getElementById('rulesBody');
+    if (currentRules.length === 0) {
+        body.innerHTML =
+            '<tr><td colspan="11" class="empty-state">' +
+            '暂无组合规则。请先创建匹配规则。</td></tr>';
+        return;
+    }
+    body.innerHTML = currentRules.map(rule => {
+        const active = rule.status === 'active';
+        const itemCount = Number(rule.item_count || 0);
+        let statusHTML = active
+            ? '<span class="status-pill status-active">已启用</span>'
+            : '<span class="status-pill status-inactive">已停用</span>';
+        if (itemCount === 0) {
+            statusHTML +=
+                '<div class="mt-1"><span class="status-pill status-warning">' +
+                '缺少组成 SKU</span></div>';
+        }
+        const nextStatus = active ? 'inactive' : 'active';
+        const actionText = active ? '停用' : '启用';
+        return `
+            <tr>
+                <td><span class="rule-code">${escapeHTML(rule.rule_code)}</span></td>
+                <td>${escapeHTML(rule.product_name_zh || '-')}</td>
+                <td>${escapeHTML(rule.order_unit)}</td>
+                <td>${Number(rule.sets_per_carton)}</td>
+                <td>${formatCartonWeight(rule.carton_weight)}</td>
+                <td>${formatBoxNum(rule.box_length)}</td>
+                <td>${formatBoxNum(rule.box_width)}</td>
+                <td>${formatBoxNum(rule.box_height)}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary"
+                            onclick="toggleDetails(${Number(rule.id)})">
+                        ${itemCount} 种单品
+                        <span id="arrow-${Number(rule.id)}">⌄</span>
+                    </button>
+                </td>
+                <td>${statusHTML}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary"
+                            onclick="openEditRuleModal(${Number(rule.id)})">
+                        编辑
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary"
+                            onclick="changeStatus(${Number(rule.id)}, '${nextStatus}')">
+                        ${actionText}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger"
+                            onclick="deleteRule(${Number(rule.id)})">
+                        删除
+                    </button>
+                </td>
+            </tr>
+            <tr id="details-${Number(rule.id)}" class="detail-row d-none">
+                <td colspan="11">
+                    <div class="detail-box">
+                        ${renderItems(rule)}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+// 格式化长宽高，0显示为"-"
+function formatBoxNum(val){
+    const v = Number(val || 0);
+    if(!Number.isFinite(v) || v <=0) return '-';
+    return v.toFixed(2);
+}
+// formatCartonWeight 展示每箱重量，未填写时显示占位符。
+function formatCartonWeight(value) {
+    const weight = Number(value || 0);
+    if (!Number.isFinite(weight) || weight <= 0) {
+        return '-';
+    }
+    return String(parseFloat(weight.toFixed(3)));
+}
+function renderItems(rule) {
+    const items = rule.items || [];
+    if (items.length === 0) {
+        return '<div class="text-warning">此规则尚未配置组成 SKU，不能用于订单拆分。</div>';
+    }
+    const details = items.map(item => `
+        <div class="composition-item">
+            <div class="d-flex justify-content-between flex-wrap gap-2">
+                <div>
+                    <strong>${escapeHTML(item.product_name_zh || item.product_name)}</strong>
+                    <div class="muted small mt-1">
+                        ${escapeHTML(item.product_name)}
+                        ${item.model ? ' · 型号：' + escapeHTML(item.model) : ''}
+                        ${item.color ? ' · 颜色：' + escapeHTML(item.color) : ''}
+                    </div>
+                    <div class="muted small">
+                        SKU：${escapeHTML(item.sku_code || item.sku_id)}
+                    </div>
+                </div>
+                <div class="text-end">
+                    <strong>${Number(item.quantity_per_set)}</strong>
+                    <div class="muted small">个/套</div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    const totalPerSet = items.reduce(
+        (sum, item) => sum + Number(item.quantity_per_set || 0), 0
+    );
+    let sizeText = '';
+    if(rule.box_length>0 && rule.box_width>0 && rule.box_height>0){
+        sizeText = `箱子尺寸：${Number(rule.box_length).toFixed(2)} * ${Number(rule.box_width).toFixed(2)} * ${Number(rule.box_height).toFixed(2)} cm`;
+    }
+    return `
+        <div class="fw-semibold mb-2">组合组成明细</div>
+        ${details}
+        <div class="mt-3 muted small">
+            每套单品合计：${totalPerSet} 个；
+            每箱 ${Number(rule.sets_per_carton)} 套；
+            每箱单品总数：${totalPerSet * Number(rule.sets_per_carton)} 个。
+            ${sizeText ? '<br/>'+sizeText : ''}
+        </div>
+        ${rule.remark ? '<div class="mt-2">备注：' + escapeHTML(rule.remark) + '</div>' : ''}
+    `;
+}
+function toggleDetails(id) {
+    const row = document.getElementById('details-' + id);
+    if (!row) return;
+    row.classList.toggle('d-none');
+    const arrow = document.getElementById('arrow-' + id);
+    if (arrow) {
+        arrow.textContent = row.classList.contains('d-none') ? '⌄' : '⌃';
+    }
+}
+async function changeStatus(id, status) {
+    const action = status === 'active' ? '启用' : '停用';
+    if (!confirm(`确定要${action}这条组合匹配规则吗？`)) {
+        return;
+    }
+    try {
+        const response = await fetch(
+            `/api/product-match-rules/${id}/status`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            }
+        );
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || action + '失败');
+        }
+        // 先刷新列表（loadRules 会清空提示区），再显示操作结果。
+        await loadRules();
+        showMessage(result.message || action + '成功', 'success');
+    } catch (error) {
+        showMessage(error.message || '操作失败');
+    }
+}
+// deleteRule 删除单条组合规则；规则已被订单引用时需二次确认。
+async function deleteRule(id) {
+    const rule = currentRules.find(item => Number(item.id) === Number(id));
+    const label = rule
+        ? `${rule.rule_code}（${rule.product_name_zh || rule.customer_product_name}）`
+        : `#${id}`;
+    if (!confirm(`确定要删除组合规则 ${label} 吗？删除后不可恢复。`)) {
+        return;
+    }
+    try {
+        let response = await fetch(
+            `/api/product-match-rules/${id}`, { method: 'DELETE' }
+        );
+        let result = await response.json();
+        if (response.status === 409 && result.references) {
+            if (!confirm(result.message)) return;
+            response = await fetch(
+                `/api/product-match-rules/${id}?force=1`,
+                { method: 'DELETE' }
+            );
+            result = await response.json();
+        }
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || '删除失败');
+        }
+        // 先刷新列表（loadRules 会清空提示区），再显示删除结果。
+        await loadRules();
+        showMessage(result.message || '组合规则已删除', 'success');
+    } catch (error) {
+        showMessage(error.message || '删除失败');
+    }
+}
+function resetFilters() {
+    document.getElementById('keyword').value = '';
+    document.getElementById('statusFilter').value = '';
+    loadRules();
+}
+/* -------------------------
+   新建 / 编辑组合规则
+-------------------------- */
+const SAVE_BUTTON_TEXT = '保存组合规则';
+function getRuleModal() {
+    if (!ruleModalInstance) {
+        ruleModalInstance =
+            new bootstrap.Modal(document.getElementById('ruleModal'));
+    }
+    return ruleModalInstance;
+}
+function skuOptionLabel(sku) {
+    const parts = [sku.sku_code, sku.product_name_zh || sku.product_name];
+    if (sku.model) parts.push('型号：' + sku.model);
+    if (sku.color) parts.push('颜色：' + sku.color);
+    const label = parts.filter(Boolean).join(' · ');
+    return sku.status === 'active' ? label : label + '（已停用）';
+}
+async function loadSKUOptions() {
+    if (skuOptions.length > 0) return;
+    const response = await fetch('/api/skus');
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+        throw new Error(result.message || '读取单品 SKU 失败');
+    }
+    skuOptions = result.data || [];
+}
+function fillSKUSelect(select, selectedId, excludeIds) {
+    const options = ['<option value="">请选择单品 SKU</option>'];
+    const excluded = excludeIds || [];
+    skuOptions.forEach(sku => {
+        const value = String(Number(sku.id));
+        if (excluded.indexOf(value) !== -1) return;
+        const selected = String(selectedId) === value ? ' selected' : '';
+        options.push(
+            `<option value="${value}"${selected}>` +
+            `${escapeHTML(skuOptionLabel(sku))}</option>`
+        );
+    });
+    select.innerHTML = options.join('');
+}
+function refreshRuleItemSelects() {
+    const selects = Array.from(
+        document.querySelectorAll('#ruleItemRows .rule-item-sku')
+    );
+    selects.forEach(select => {
+        const used = selects
+            .filter(other => other !== select && other.value)
+            .map(other => other.value);
+        // 编辑回填时以行的 data-sku-id 为准；用户改动下拉后该标记会被清除。
+        const row = select.closest('.rule-item-row');
+        const preferred = row && row.dataset.skuId
+            ? row.dataset.skuId
+            : select.value;
+        fillSKUSelect(select, preferred, used);
+    });
+    updateRuleItemSummary();
+}
+// addRuleItemRow 追加一行组成单品；传入 item 时用于编辑回填。
+function addRuleItemRow(item) {
+    const row = document.createElement('div');
+    row.className = 'row g-2 align-items-center rule-item-row mb-2';
+    row.innerHTML = `
+        <div class="col-md-6">
+            <select class="form-select rule-item-sku"></select>
+        </div>
+        <div class="col-md-3">
+            <input type="number" class="form-control rule-item-qty"
+                   min="0.001" step="0.001" value="1">
+        </div>
+        <div class="col-md-2">
+            <input class="form-control rule-item-remark" maxlength="500"
+                   placeholder="备注">
+        </div>
+        <div class="col-md-1 text-end">
+            <button type="button" class="btn btn-sm btn-outline-danger"
+                    onclick="removeRuleItemRow(this)">删除</button>
+        </div>
+    `;
+    document.getElementById('ruleItemRows').appendChild(row);
+    if (item) {
+        row.dataset.skuId = String(Number(item.sku_id));
+        row.querySelector('.rule-item-qty').value =
+            Number(item.quantity_per_set || 1);
+        row.querySelector('.rule-item-remark').value = item.remark || '';
+    }
+    refreshRuleItemSelects();
+}
+function removeRuleItemRow(button) {
+    const row = button.closest('.rule-item-row');
+    if (row) row.remove();
+    if (!document.querySelector('#ruleItemRows .rule-item-row')) {
+        addRuleItemRow();
+        return;
+    }
+    refreshRuleItemSelects();
+}
+function collectRuleItems() {
+    return Array.from(
+        document.querySelectorAll('#ruleItemRows .rule-item-row')
+    ).map(row => ({
+        sku_id: Number(row.querySelector('.rule-item-sku').value || 0),
+        quantity_per_set:
+            Number(row.querySelector('.rule-item-qty').value || 0),
+        remark: row.querySelector('.rule-item-remark').value.trim()
+    }));
+}
+function updateRuleItemSummary() {
+    const items = collectRuleItems();
+    const summary = document.getElementById('ruleItemSummary');
+    if (items.length === 0) {
+        summary.textContent = '';
+        return;
+    }
+    const perSet = items.reduce(
+        (sum, item) => sum + (item.sku_id > 0 ? item.quantity_per_set : 0), 0
+    );
+    const sets = Number(
+        document.getElementById('ruleSetsPerCarton').value || 0
+    );
+    summary.textContent =
+        `已选 ${items.filter(item => item.sku_id > 0).length} 种单品；` +
+        `每套单品合计 ${perSet} 个；` +
+        `每箱 ${sets} 套，每箱单品合计 ${perSet * sets} 个。`;
+}
+function setRuleModalMessage(message, type) {
+    const box = document.getElementById('ruleModalMessage');
+    if (!message) {
+        box.innerHTML = '';
+        return;
+    }
+    box.innerHTML =
+        `<span class="text-${type === 'success' ? 'success' : 'danger'}">` +
+        `${escapeHTML(message)}</span>`;
+}
+async function openCreateRuleModal() {
+    editingRuleId = 0;
+    document.getElementById('ruleForm').reset();
+    document.getElementById('ruleOrderUnit').value = '套';
+    document.getElementById('ruleSetsPerCarton').value = 40;
+    document.getElementById('ruleCartonWeight').value = 0;
+    document.getElementById('ruleBoxLength').value = 0.00;
+    document.getElementById('ruleBoxWidth').value = 0.00;
+    document.getElementById('ruleBoxHeight').value = 0.00;
+    document.getElementById('ruleStatus').value = 'active';
+    document.getElementById('ruleItemRows').innerHTML = '';
+    document.getElementById('ruleItemSummary').textContent = '';
+    setRuleModalMessage('');
+    document.getElementById('ruleModalTitle').textContent = '新建组合规则';
+    document.getElementById('saveRuleBtn').textContent = SAVE_BUTTON_TEXT;
+    try {
+        await loadSKUOptions();
+    } catch (error) {
+        showMessage(error.message || '读取单品 SKU 失败');
+        return;
+    }
+    if (skuOptions.length === 0) {
+        showMessage('暂无单品 SKU，请先在产品管理中创建 SKU');
+        return;
+    }
+    addRuleItemRow();
+    getRuleModal().show();
+}
+// openEditRuleModal 打开编辑弹窗，回填规则字段与组成单品。
+async function openEditRuleModal(id) {
+    const rule = currentRules.find(
+        item => Number(item.id) === Number(id)
+    );
+    if (!rule) {
+        showMessage('规则不存在，请刷新后重试');
+        return;
+    }
+    try {
+        await loadSKUOptions();
+    } catch (error) {
+        showMessage(error.message || '读取单品 SKU 失败');
+        return;
+    }
+    if (skuOptions.length === 0) {
+        showMessage('暂无单品 SKU，请先在产品管理中创建 SKU');
+        return;
+    }
+    editingRuleId = Number(rule.id);
+    document.getElementById('ruleForm').reset();
+    document.getElementById('ruleCode').value = rule.rule_code || '';
+    document.getElementById('ruleProductName').value =
+        rule.customer_product_name || '';
+    document.getElementById('ruleSpecification').value =
+        rule.customer_specification || '';
+    document.getElementById('ruleProductNameZH').value =
+        rule.product_name_zh || '';
+    document.getElementById('ruleOrderUnit').value = rule.order_unit || '套';
+    document.getElementById('ruleSetsPerCarton').value =
+        Number(rule.sets_per_carton || 0);
+    document.getElementById('ruleCartonWeight').value =
+        Number(rule.carton_weight || 0);
+    // 回填长宽高
+    document.getElementById('ruleBoxLength').value = Number(rule.box_length||0).toFixed(2);
+    document.getElementById('ruleBoxWidth').value = Number(rule.box_width||0).toFixed(2);
+    document.getElementById('ruleBoxHeight').value = Number(rule.box_height||0).toFixed(2);
+
+    document.getElementById('ruleStatus').value =
+        rule.status === 'inactive' ? 'inactive' : 'active';
+    document.getElementById('ruleRemark').value = rule.remark || '';
+    document.getElementById('ruleItemRows').innerHTML = '';
+    setRuleModalMessage('');
+    const items = rule.items || [];
+    if (items.length === 0) {
+        addRuleItemRow();
+    } else {
+        items.forEach(item => addRuleItemRow(item));
+    }
+    document.getElementById('ruleModalTitle').textContent = '编辑组合规则';
+    document.getElementById('saveRuleBtn').textContent = '保存修改';
+    getRuleModal().show();
+}
+// submitRule 提交新建或编辑：editingRuleId 大于 0 时走编辑接口。
+async function submitRule() {
+    const button = document.getElementById('saveRuleBtn');
+    const editing = editingRuleId > 0;
+    const items = collectRuleItems();
+    const ruleCode = document.getElementById('ruleCode').value.trim();
+    const productName =
+        document.getElementById('ruleProductName').value.trim();
+    const setsPerCarton =
+        Number(document.getElementById('ruleSetsPerCarton').value || 0);
+    const cartonWeight =
+        Number(document.getElementById('ruleCartonWeight').value || 0);
+    const boxLength = Number(document.getElementById('ruleBoxLength').value || 0);
+    const boxWidth = Number(document.getElementById('ruleBoxWidth').value || 0);
+    const boxHeight = Number(document.getElementById('ruleBoxHeight').value || 0);
+
+    if (!ruleCode || !productName) {
+        setRuleModalMessage('请填写规则编号与客户商品名称');
+        return;
+    }
+    if (setsPerCarton <= 0) {
+        setRuleModalMessage('每箱套数必须大于 0');
+        return;
+    }
+    if (cartonWeight < 0) {
+        setRuleModalMessage('每箱重量不能为负数');
+        return;
+    }
+    if(boxLength <0 || boxWidth<0 || boxHeight<0){
+        setRuleModalMessage('长宽高不能为负数');
+        return;
+    }
+    if (items.length === 0 || items.some(item => item.sku_id <= 0)) {
+        setRuleModalMessage('请为每个组成单品选择 SKU');
+        return;
+    }
+    if (items.some(item => item.quantity_per_set <= 0)) {
+        setRuleModalMessage('每套数量必须大于 0');
+        return;
+    }
+    const payload = {
+        rule_code: ruleCode,
+        customer_product_name: productName,
+        customer_specification:
+            document.getElementById('ruleSpecification').value.trim(),
+        product_name_zh:
+            document.getElementById('ruleProductNameZH').value.trim(),
+        order_unit: document.getElementById('ruleOrderUnit').value.trim() || '套',
+        sets_per_carton: setsPerCarton,
+        carton_weight: cartonWeight,
+        box_length: boxLength,
+        box_width: boxWidth,
+        box_height: boxHeight,
+        status: document.getElementById('ruleStatus').value,
+        remark: document.getElementById('ruleRemark').value.trim(),
+        items
+    };
+    setRuleModalMessage('');
+    button.disabled = true;
+    button.textContent = '正在保存...';
+    try {
+        const response = await fetch(
+            editing
+                ? `/api/product-match-rules/${editingRuleId}`
+                : '/api/product-match-rules',
+            {
+                method: editing ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }
+        );
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || '保存组合规则失败');
+        }
+        getRuleModal().hide();
+        editingRuleId = 0;
+        // 先刷新列表（loadRules 会清空提示区），再显示保存结果。
+        await loadRules();
+        showMessage(result.message || '保存成功', 'success');
+    } catch (error) {
+        setRuleModalMessage(error.message || '保存组合规则失败');
+    } finally {
+        button.disabled = false;
+        button.textContent = editingRuleId > 0 ? '保存修改' : SAVE_BUTTON_TEXT;
+    }
+}
+document.getElementById('ruleForm').addEventListener('submit', function (event) {
+    event.preventDefault();
+    submitRule();
+});
+document.getElementById('ruleItemRows').addEventListener('change', function (event) {
+    if (event.target.classList.contains('rule-item-sku')) {
+        const row = event.target.closest('.rule-item-row');
+        if (row) delete row.dataset.skuId;
+        refreshRuleItemSelects();
+    }
+});
+document.getElementById('ruleItemRows').addEventListener('input', function (event) {
+    if (event.target.classList.contains('rule-item-qty')) {
+        updateRuleItemSummary();
+    }
+});
+document.getElementById('ruleSetsPerCarton').addEventListener('input',
+    updateRuleItemSummary);
+document.getElementById('keyword').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') loadRules();
+});
+loadRules();
+</script>
+{{end}}

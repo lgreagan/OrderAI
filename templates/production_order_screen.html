@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .title}}{{.title}}{{else}}生产明细 - OrderAI{{end}}</title>
+    <style>
+        :root { --line: #d8dee9; --muted: #6b7280; --brand: #5268d5; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 16px;
+            background: #f4f6fa;
+            color: #1f2937;
+            font: 13.5px/1.55 "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+        }
+        .toolbar {
+            max-width: 980px;
+            margin: 0 auto 10px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .btn {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: #1f2937;
+            border-radius: 6px;
+            padding: 7px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+        .sheet {
+            max-width: 1040px;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 22px 24px 18px;
+        }
+
+        h1 { font-size: 20px; margin: 0 0 8px; }
+        h1 .no { color: var(--brand); margin-left: 6px; }
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 12px;
+            color: var(--muted);
+            font-size: 12.5px;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 8px 0;
+            margin-bottom: 12px;
+        }
+        .meta span b { color: #1f2937; font-weight: 600; }
+
+        .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+        .stat {
+            flex: 1 1 130px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+        .stat b { color: #1f2937; font-size: 16px; font-weight: 700; margin-left: 4px; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid var(--line); padding: 9px 10px; vertical-align: middle; }
+        thead th { background: #f1f4f9; font-weight: 600; text-align: left; font-size: 13px; }
+        td.num, th.num { text-align: right; white-space: nowrap; }
+        td.ctr, th.ctr { text-align: center; white-space: nowrap; }
+        /* 产品名列吸收剩余宽度，窄窗口下也不会被数字列挤扁。  th.wide { width: 100%; } */
+      
+        tr.total td { font-weight: 700; background: #fafbfe; font-size: 14px; }
+        .cell-name { font-weight: 600; }
+        /* 简码是车间现场对着纸念的字段，工人多在 50 岁以上，
+           字号特意放大加粗（正文 13.5px → 22px），打印件一眼能认。 */
+        .short-code {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            line-height: 1.15;
+            color: #0f172a;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        td.cell-code, th.cell-code { width: 120px; text-align: center; }
+        /* 完整编码：给核对用，等宽 + 加粗，0/O、1/I 不易看混。 */
+        .full-code {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: .3px;
+            white-space: nowrap;
+            color: #1f2937;
+        }
+        td.cell-full-code, th.cell-full-code { width: 134px; text-align: center; }
+        .cartons { font-size: 15px; font-weight: 700; }
+        .note { margin-top: 10px; color: var(--muted); font-size: 12px; }
+        .foot {
+            margin-top: 16px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 11.5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .empty { padding: 30px; text-align: center; color: var(--muted); }
+
+        @page { size: A4 portrait; margin: 12mm; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .toolbar { display: none !important; }
+            .sheet { border: 0; border-radius: 0; padding: 0; max-width: none; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button class="btn" id="backBtn">返回</button>
+        <button class="btn btn-primary" id="printBtn">打印 / 保存为 PDF</button>
+    </div>
+
+    <div class="sheet" id="sheet">
+        <div class="empty">正在加载…</div>
+    </div>
+
+<script>
+    var MO_ID = {{if .id}}{{.id}}{{else}}0{{end}};
+    var SKUS = {}, RULES = {};
+
+    var UNIT_ZH = {
+        pcs: '个', pc: '个', set: '套', sets: '套', box: '箱', boxes: '箱',
+        roll: '卷', kg: '公斤', m: '米', pair: '双'
+    };
+
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function qty(v) { return Number(v || 0).toFixed(3).replace(/\.?0+$/, ''); }
+    function day(v) { return v ? String(v).slice(0, 10) : ''; }
+    function stamp(v) { return v ? String(v).replace('T', ' ').slice(0, 16) : ''; }
+    function getJSON(url) { return fetch(url).then(function (r) { return r.json(); }); }
+
+    // 第三方（工厂）看不懂 pcs 这类单位，统一翻成中文。
+    function unitZH(u) {
+        var k = String(u || '').trim();
+        return UNIT_ZH[k.toLowerCase()] || k;
+    }
+    // 简码 = 编码后三位，给第三方当短参照用（不需要完整 SKU 码）。
+    function shortCode(code) {
+        var c = String(code || '').trim();
+        if (!c) return '';
+        return c.length > 3 ? c.slice(-3) : c;
+    }
+    function codeOf(it) {
+        if (it.product_type === 'sku') return (SKUS[it.product_ref_id] || {}).sku_code || '';
+        return (RULES[it.product_ref_id] || {}).rule_code || '';
+    }
+    // 产品名只显示中文：车间看的是中文。优先用单据快照里存的名字，
+    // 快照为空的老单据回落到 SKU / 组合规则维护的中文名。
+    function nameZH(it) {
+        if (it.product_name) return it.product_name;
+        if (it.product_type === 'sku') {
+            var s = SKUS[it.product_ref_id] || {};
+            return s.product_name_zh || s.product_name || '';
+        }
+        var r = RULES[it.product_ref_id] || {};
+        return r.product_name_zh || r.customer_product_name || '';
+    }
+
+    async function load() {
+        var sheet = document.getElementById('sheet');
+        try {
+            var res = await Promise.all([
+                getJSON('/api/production-orders/' + MO_ID),
+                getJSON('/api/skus'),
+                getJSON('/api/product-match-rules')
+            ]);
+            if (!res[0].success) throw new Error(res[0].message || '读取生产单失败');
+            (res[1].data || []).forEach(function (s) { SKUS[s.id] = s; });
+            (res[2].data || []).forEach(function (r) { RULES[r.id] = r; });
+
+            var mo = res[0].data;
+            var order = null;
+            if (mo.source_order_id) {
+                try {
+                    var o = await getJSON('/api/orders/' + mo.source_order_id);
+                    if (o && o.success) order = o.data;
+                } catch (e) { /* 忽略 */ }
+            }
+            render(mo, order);
+        } catch (err) {
+            sheet.innerHTML = '<div class="empty">' + esc(err.message || '读取失败') + '</div>';
+        }
+    }
+
+    function cartons(it) {
+        if (Number(it.carton_count) > 0) return Number(it.carton_count);
+        var pack = Number(it.sets_per_carton);
+        return pack > 0 ? Number(it.planned_quantity || 0) / pack : 0;
+    }
+
+    function render(mo, order) {
+        var items = mo.items || [];
+        var ruleLines = 0, skuLines = 0, totalCartons = 0;
+
+        items.forEach(function (it) {
+            if (it.product_type === 'rule') { ruleLines += 1; } else { skuLines += 1; }
+            totalCartons += cartons(it);
+        });
+
+        var rows = items.map(function (it, i) {
+            var unit = unitZH(it.unit);
+            return '<tr>'
+                + '<td class="ctr">' + (i + 1) + '</td>'
+                + '<td><div class="cell-name">' + esc(nameZH(it)) + '</div></td>'
+                + '<td class="ctr cell-code"><span class="short-code">' + esc(shortCode(codeOf(it))) + '</span></td>'
+                + '<td class="ctr cell-full-code"><span class="full-code">' + esc(codeOf(it)) + '</span></td>'
+                + '<td class="num">' + qty(it.planned_quantity) + ' ' + esc(unit) + '</td>'
+                + '<td class="num">' + qty(it.sets_per_carton) + ' ' + esc(unit) + '</td>'
+                + '<td class="num"><span class="cartons">' + qty(cartons(it)) + '</span></td>'
+                + '</tr>';
+        }).join('');
+
+        if (!items.length) {
+            rows = '<tr><td colspan="7" class="empty">无明细</td></tr>';
+        }
+
+        var orderNumber = (order && order.order_number) || mo.source_order_number || '';
+        var workTypeNames = { produce: '投料生产', pack: '包装装箱', none: '只记录' };
+        var metaList = [
+            ['客户', (order && order.customer) || '—'],
+            ['国家', (order && order.country) || '—'],
+            ['运输方式', (order && order.shipping_method) || '—'],
+            ['订单时间', stamp(order && order.created_at) || '—'],
+            ['生产单号', mo.po_number || '—'],
+            ['作业类型', workTypeNames[mo.work_type] || '投料生产']
+        ];
+        // 历史单据可能带有采购来源，照实标注（新单不再产生）。
+        if (mo.source_purchase_number) {
+            metaList.push(['来源采购单', mo.source_purchase_number]);
+        }
+        metaList.push(['制表时间', new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')]);
+        var meta = metaList.map(function (kv) {
+            return '<span>' + esc(kv[0]) + '：<b>' + esc(kv[1]) + '</b></span>';
+        }).join('');
+
+        var stats = [
+            ['产品行数', items.length + ' 行'],
+            ['组合规则', ruleLines + ' 行'],
+            ['单品直配', skuLines + ' 行'],
+            ['合计箱数', qty(totalCartons) + ' 箱']
+        ].map(function (kv) {
+            return '<div class="stat">' + esc(kv[0]) + '<b>' + esc(kv[1]) + '</b></div>';
+        }).join('');
+
+        document.getElementById('sheet').innerHTML = ''
+            + '<h1>生产订单<span class="no">' + esc(orderNumber || mo.po_number || '') + '</span></h1>'
+            + '<div class="meta">' + meta + '</div>'
+            + '<div class="stats">' + stats + '</div>'
+            + '<table>'
+            + '<thead><tr>'
+            + '<th class="ctr">行</th>'
+            + '<th class="wide">产品名</th>'
+            + '<th class="ctr cell-code">简码</th>'
+            + '<th class="ctr cell-full-code">编码</th>'
+            + '<th class="num">数量</th>'
+            + '<th class="num">每箱装</th>'
+            + '<th class="num">箱数</th>'
+            + '</tr></thead>'
+            + '<tbody>' + rows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td colspan="6">合计（' + items.length + ' 行产品）</td>'
+            + '<td class="num">' + qty(totalCartons) + '</td>'
+            + '</tr></tfoot>'
+            + '</table>'
+            + '<div class="note">箱数 = 数量 ÷ 每箱装：组合规则取每箱套数，单品直配取该产品每箱装多少个。</div>'
+            + '<div class="foot"><span>OrderAI · 生产订单</span><span>' + esc(mo.po_number || '') + '</span></div>';
+    }
+
+    document.getElementById('printBtn').addEventListener('click', function () { window.print(); });
+    document.getElementById('backBtn').addEventListener('click', function () {
+        if (window.history.length > 1) { window.history.back(); }
+        else { window.location.href = '/production-orders'; }
+    });
+
+    load();
+</script>
+</body>
+</html>

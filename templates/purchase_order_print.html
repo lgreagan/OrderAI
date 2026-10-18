@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .title}}{{.title}}{{else}}采购订单 - OrderAI{{end}}</title>
+    <style>
+        :root { --line: #d8dee9; --muted: #6b7280; --brand: #5268d5; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 18px;
+            background: #f4f6fa;
+            color: #1f2937;
+            font: 13px/1.5 "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+        }
+        .sheet {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 16mm 12mm;
+        }
+        .toolbar {
+            max-width: 210mm;
+            margin: 0 auto 12px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .btn {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: #1f2937;
+            border-radius: 6px;
+            padding: 7px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+        h1 { font-size: 20px; margin: 0 0 6px; }
+        h1 .no { color: var(--brand); }
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 14px;
+            color: var(--muted);
+            font-size: 12px;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 8px 0;
+            margin-bottom: 12px;
+        }
+        .meta span b { color: #1f2937; font-weight: 600; }
+        .meta .sep { color: var(--line); }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: middle; }
+        thead th { background: #f1f4f9; font-weight: 600; text-align: left; }
+        td.num, th.num { text-align: right; white-space: nowrap; }
+        tr.total td { font-weight: 700; background: #fafbfe; }
+        .muted { color: var(--muted); }
+        .small { font-size: 11.5px; }
+        .cell-name { font-weight: 600; }
+        .cell-sub { color: var(--muted); font-size: 11.5px; }
+        .note { margin-top: 10px; color: var(--muted); font-size: 11.5px; }
+        .remark { margin-top: 12px; font-size: 12px; }
+        .remark b { display: block; margin-bottom: 3px; }
+        .foot {
+            margin-top: 16px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .badge {
+            display: inline-block; padding: 1px 8px; border-radius: 10px;
+            font-size: 11.5px; background: #eef1fb; color: #3b4fd8;
+        }
+        .empty { padding: 30px; text-align: center; color: var(--muted); }
+        h2 { font-size: 14px; margin: 16px 0 6px; color: var(--brand); }
+
+        @page { size: A4 portrait; margin: 12mm; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .toolbar { display: none !important; }
+            .sheet { border: 0; border-radius: 0; padding: 0; max-width: none; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button class="btn" id="backBtn">返回</button>
+        <button class="btn btn-primary" id="printBtn">打印 / 保存为 PDF</button>
+    </div>
+
+    <div class="sheet" id="sheet">
+        <div class="empty">正在加载…</div>
+    </div>
+
+<script>
+    var PO_ID = {{if .id}}{{.id}}{{else}}0{{end}};
+
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function qty(v) { return Number(v || 0).toFixed(3).replace(/\.?0+$/, ''); }
+    function money(v) { return Number(v || 0).toFixed(2); }
+    function day(v) { return v ? String(v).slice(0, 10) : ''; }
+
+    var STATUS = {
+        draft: '草稿', ordered: '已下单', partial: '部分到货',
+        received: '已到货', cancelled: '已取消'
+    };
+
+    async function load() {
+        var sheet = document.getElementById('sheet');
+        try {
+            var res = await fetch('/api/purchase-orders/' + PO_ID);
+            var json = await res.json();
+            if (!json.success) throw new Error(json.message || '读取采购单失败');
+            render(json.data);
+        } catch (err) {
+            sheet.innerHTML = '<div class="empty">' + esc(err.message || '读取失败') + '</div>';
+        }
+    }
+
+    function render(po) {
+        var items = po.items || [];
+        // 产品与材料分列，避免混在一起。
+        var products = items.filter(function (it) { return it.item_type !== 'material'; });
+        var materials = items.filter(function (it) { return it.item_type === 'material'; });
+
+        var prodQty = 0, prodReceived = 0, prodAmount = 0;
+        var matQty = 0, matReceived = 0, matAmount = 0;
+
+        var productRows = products.map(function (it, i) {
+            var quantity = Number(it.quantity || 0);
+            var received = Number(it.received_quantity || 0);
+            prodQty += quantity;
+            prodReceived += received;
+            prodAmount += Number(it.amount || 0);
+
+            return '<tr>'
+                + '<td class="num">' + (i + 1) + '</td>'
+                + '<td><div class="cell-name">' + esc(it.item_code) + '</div>'
+                + '<div class="cell-sub">' + esc(it.item_name) + (it.spec ? ' · ' + esc(it.spec) : '') + '</div></td>'
+                + '<td class="num">' + qty(it.required_quantity) + '</td>'
+                + '<td class="num">' + qty(quantity) + '</td>'
+                + '<td>' + esc(it.unit) + '</td>'
+                + '<td class="num">' + money(it.unit_price) + '</td>'
+                + '<td class="num">' + money(it.amount) + '</td>'
+                + '<td class="num">' + qty(received) + '</td>'
+                + '<td>' + esc(it.remark) + '</td>'
+                + '</tr>';
+        }).join('');
+
+        var materialRows = materials.map(function (it, i) {
+            var quantity = Number(it.quantity || 0);
+            var received = Number(it.received_quantity || 0);
+            matQty += quantity;
+            matReceived += received;
+            matAmount += Number(it.amount || 0);
+
+            return '<tr>'
+                + '<td class="num">' + (i + 1) + '</td>'
+                + '<td><div class="cell-name">' + esc(it.item_code) + '</div>'
+                + '<div class="cell-sub">' + esc(it.item_name) + (it.spec ? ' · ' + esc(it.spec) : '') + '</div></td>'
+                + '<td class="num">' + qty(quantity) + '</td>'
+                + '<td>' + esc(it.unit) + '</td>'
+                + '<td class="num">' + money(it.unit_price) + '</td>'
+                + '<td class="num">' + money(it.amount) + '</td>'
+                + '<td class="num">' + qty(received) + '</td>'
+                + '<td>' + esc(it.remark) + '</td>'
+                + '</tr>';
+        }).join('');
+
+        if (!products.length) {
+            productRows = '<tr><td colspan="9" class="empty">无产品明细</td></tr>';
+        }
+        if (!materials.length) {
+            materialRows = '<tr><td colspan="8" class="empty">无材料明细</td></tr>';
+        }
+
+        var meta = [
+            ['供应商', po.supplier_name || '—'],
+            ['来源订单', po.source_order_number || '—'],
+            ['下单日期', day(po.order_date) || '—'],
+            ['预计到货', day(po.expected_date) || '—'],
+            ['币种', po.currency || 'CNY']
+        ].map(function (kv) {
+            return '<span>' + esc(kv[0]) + '：<b>' + esc(kv[1]) + '</b></span><span class="sep">|</span>';
+        }).join('');
+
+        document.getElementById('sheet').innerHTML = ''
+            + '<h1>采购订单 <span class="no">' + esc(po.po_number) + '</span>'
+            + ' <span class="badge">' + esc(STATUS[po.status] || po.status) + '</span></h1>'
+            + '<div class="meta">' + meta + '</div>'
+            + '<h2>产品（' + products.length + ' 项）</h2>'
+            + '<table>'
+            + '<thead><tr>'
+            + '<th class="num" style="width:38px">序号</th>'
+            + '<th>产品</th>'
+            + '<th class="num" style="width:72px">需求</th>'
+            + '<th class="num" style="width:72px">采购</th>'
+            + '<th style="width:48px">单位</th>'
+            + '<th class="num" style="width:72px">单价</th>'
+            + '<th class="num" style="width:86px">金额</th>'
+            + '<th class="num" style="width:72px">已入库</th>'
+            + '<th>备注</th>'
+            + '</tr></thead>'
+            + '<tbody>' + productRows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td colspan="3">产品合计</td>'
+            + '<td class="num">' + qty(prodQty) + '</td>'
+            + '<td></td>'
+            + '<td></td>'
+            + '<td class="num">' + money(prodAmount) + '</td>'
+            + '<td class="num">' + qty(prodReceived) + '</td>'
+            + '<td></td>'
+            + '</tr></tfoot>'
+            + '</table>'
+            + '<h2>材料（' + materials.length + ' 项）</h2>'
+            + '<table>'
+            + '<thead><tr>'
+            + '<th class="num" style="width:38px">序号</th>'
+            + '<th>材料</th>'
+            + '<th class="num" style="width:72px">用量</th>'
+            + '<th style="width:48px">单位</th>'
+            + '<th class="num" style="width:72px">单价</th>'
+            + '<th class="num" style="width:86px">金额</th>'
+            + '<th class="num" style="width:72px">已入库</th>'
+            + '<th>备注</th>'
+            + '</tr></thead>'
+            + '<tbody>' + materialRows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td colspan="2">材料合计</td>'
+            + '<td class="num">' + qty(matQty) + '</td>'
+            + '<td></td>'
+            + '<td></td>'
+            + '<td class="num">' + money(matAmount) + '</td>'
+            + '<td class="num">' + qty(matReceived) + '</td>'
+            + '<td></td>'
+            + '</tr></tfoot>'
+            + '</table>'
+            + '<div class="note">金额 = 采购数量 × 单价；货款 ' + money(po.goods_amount)
+            + ' ＋ 运费 ' + money(po.freight_amount) + ' ＝ <b>合计 ' + money(po.total_amount) + ' ' + esc(po.currency) + '</b>。'
+            + '产品与材料分列；「已入库」为到货登记数量，仅有编码关联的行会写入库存。</div>'
+            + (po.remark ? '<div class="remark"><b>备注</b>' + esc(po.remark) + '</div>' : '')
+            + '<div class="foot"><span>OrderAI · 采购订单</span><span>打印时间：'
+            + new Date().toLocaleString('zh-CN') + '</span></div>';
+    }
+
+    document.getElementById('printBtn').addEventListener('click', function () { window.print(); });
+    document.getElementById('backBtn').addEventListener('click', function () {
+        if (window.history.length > 1) { window.history.back(); }
+        else { window.location.href = '/purchase-orders'; }
+    });
+
+    load();
+</script>
+</body>
+</html>

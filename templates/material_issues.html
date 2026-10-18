@@ -1,0 +1,412 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">领料出库</h4>
+            <div class="text-secondary small">生产领料按实际用量出库；如理论需要 100、因损耗实际领 105，直接填 105</div>
+            <div class="text-secondary small">
+                包装材料（纸箱等）随货发出时由发货单按实际发货量自动核销，<span class="text-warning-emphasis fw-semibold">不要在这里重复领用</span>，否则同一只纸箱会被扣两次
+            </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" id="newIssueBtn">+ 新建领料</button>
+            <a class="btn btn-outline-secondary" href="/inventory">库存结存</a>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-6">
+                    <input id="keyword" class="form-control" placeholder="搜索材料编码、名称、简称">
+                </div>
+                <div class="col-lg-3 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>时间</th>
+                            <th>材料</th>
+                            <th class="text-end">领用数量</th>
+                            <th>关联单据</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody id="issueBody">
+                        <tr><td colspan="5" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新建领料 -->
+<div class="modal fade" id="issueModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新建领料</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 align-items-end mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">关联生产单（可选）</label>
+                        <select class="form-select" id="issueProductionOrder"></select>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="button" class="btn btn-outline-primary w-100" id="loadNeedsBtn">载入用料需求</button>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">仓库</label>
+                        <input class="form-control" id="issueWarehouse" value="default" maxlength="50">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">整单备注</label>
+                        <input class="form-control" id="issueRemark" maxlength="500">
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <div class="small text-secondary">「需求」为 BOM 理论用量，「结存」为当前库存，仅作参考；实际领用数量按实填写。</div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="syncRequiredBtn"
+                                title="把每行的需求填入实际领用，按理论用量一键领料">一键同步需求</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="addLineBtn">+ 添加一行</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="min-width:220px">材料</th>
+                                <th class="text-end">需求</th>
+                                <th class="text-end">结存</th>
+                                <th style="width:130px" class="text-end">实际领用 *</th>
+                                <th style="min-width:160px">备注</th>
+                                <th class="text-center" style="width:50px">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lineBody">
+                            <tr><td colspan="6" class="text-center text-secondary py-3">暂无明细，请添加材料或载入生产单用料需求</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveIssueBtn">保存领料</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const modal = new bootstrap.Modal(document.getElementById('issueModal'));
+        const refLabels = { production_order: '生产单', manual: '手工' };
+        let materials = [];
+        let stock = {};
+        let productionOrders = [];
+        const state = { lines: [] };
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function num(value) {
+            return Number(value).toFixed(3).replace(/\.?0+$/, '');
+        }
+
+        function refLabel(t) { return refLabels[t] || t || ''; }
+
+        function materialName(m) {
+            return `${m.code} ${m.short_name || m.name_zh || m.name || ''}`.trim();
+        }
+
+        async function loadRecords() {
+            $('#issueBody').html('<tr><td colspan="5" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON('/api/inventory/transactions', {
+                    item_type: 'material',
+                    biz_type: 'requisition',
+                    keyword: $('#keyword').val().trim(),
+                    limit: 200
+                });
+                if (!result.success) throw new Error(result.message || '读取领料记录失败');
+                const rows = result.data || [];
+                if (!rows.length) {
+                    $('#issueBody').html('<tr><td colspan="5" class="text-center text-secondary py-4">暂无领料记录</td></tr>');
+                    return;
+                }
+                $('#issueBody').html(rows.map(t => {
+                    const ref = t.ref_type ? `${esc(refLabel(t.ref_type))}${t.ref_id ? '#' + t.ref_id : ''}` : '手工';
+                    const time = (t.occurred_at || '').replace('T', ' ').slice(0, 19);
+                    return `
+                        <tr>
+                            <td>${esc(time)}</td>
+                            <td><span class="fw-semibold">${esc(t.item_code)}</span> ${esc(t.item_name)}</td>
+                            <td class="text-end fw-semibold">${num(t.quantity)}</td>
+                            <td>${ref}</td>
+                            <td>${esc(t.remark)}</td>
+                        </tr>
+                    `;
+                }).join(''));
+            } catch (err) {
+                $('#issueBody').html(
+                    `<tr><td colspan="5" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadMaterials() {
+            try {
+                const result = await $.getJSON('/api/materials', {});
+                materials = result.data || [];
+                stock = {};
+            } catch (err) { materials = []; }
+        }
+
+        async function loadStock() {
+            try {
+                const result = await $.getJSON('/api/inventory/stock', { item_type: 'material' });
+                (result.data || []).forEach(s => {
+                    stock[s.item_id] = (stock[s.item_id] || 0) + Number(s.stock_quantity);
+                });
+            } catch (err) { /* 忽略：结存仅作参考 */ }
+        }
+
+        async function loadProductionOrders() {
+            try {
+                const result = await $.getJSON('/api/production-orders', {});
+                productionOrders = result.data || [];
+            } catch (err) { productionOrders = []; }
+        }
+
+        function stockText(id) {
+            return stock[id] == null ? '-' : num(stock[id]);
+        }
+
+        // 包装材料（纸箱等）随货发出时由发货单自动核销，不参与生产领料。
+        function isPackagingMaterial(id) {
+            const m = materials.find(x => Number(x.id) === Number(id));
+            return !!m && m.category === 'packaging';
+        }
+
+        function lineIsPackaging(line) {
+            return !!(line && (line.is_packaging || isPackagingMaterial(line.material_id)));
+        }
+
+        function materialOptionsHtml(selectedId) {
+            if (!materials.length) return '<option value="">（暂无材料，请先在材料管理新增）</option>';
+            return materials.map(m =>
+                `<option value="${m.id}" ${Number(selectedId) === Number(m.id) ? 'selected' : ''}>${esc(materialName(m))}</option>`
+            ).join('');
+        }
+
+        function renderLines() {
+            const lines = state.lines;
+            if (!lines.length) {
+                $('#lineBody').html('<tr><td colspan="6" class="text-center text-secondary py-3">暂无明细，请添加材料或载入生产单用料需求</td></tr>');
+                return;
+            }
+            $('#lineBody').html(lines.map((l, idx) => {
+                const pack = lineIsPackaging(l);
+                const onHand = stock[l.material_id];
+                const qty = Number(l.quantity) || 0;
+                const low = onHand != null && qty > Number(onHand) + 0.0001;
+                return `
+                <tr class="${pack ? 'table-warning' : ''}">
+                    <td>
+                        <select class="form-select form-select-sm line-material" data-idx="${idx}">${materialOptionsHtml(l.material_id)}</select>
+                        ${pack ? '<div class="small text-warning-emphasis mt-1">包材：发货时按实际发货量自动核销，此处留 0 即可（确需额外补领才填数）</div>' : ''}
+                    </td>
+                    <td class="text-end text-secondary">${l.required_quantity != null ? num(l.required_quantity) : '-'}</td>
+                    <td class="text-end ${low ? 'text-danger fw-semibold' : 'text-secondary'}">${stockText(l.material_id)}</td>
+                    <td><input type="number" class="form-control form-control-sm text-end line-qty${low ? ' is-invalid' : ''}"
+                               data-idx="${idx}" min="0" step="0.001" value="${l.quantity != null && l.quantity !== '' ? l.quantity : ''}"></td>
+                    <td><input class="form-control form-control-sm line-remark" data-idx="${idx}"
+                               value="${esc(l.remark || '')}" maxlength="200"></td>
+                    <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger line-del" data-idx="${idx}">×</button></td>
+                </tr>
+            `;
+            }).join(''));
+        }
+
+        async function openModal() {
+            if (!materials.length) await loadMaterials();
+            if (!productionOrders.length) await loadProductionOrders();
+            await loadStock();
+            state.lines = [];
+            $('#issueRemark').val('');
+            $('#issueWarehouse').val('default');
+            $('#issueProductionOrder').html(productionOrders.length
+                ? '<option value="">（不关联）</option>' + productionOrders.map(p =>
+                    `<option value="${p.id}">${esc(p.po_number)}${p.source_order_number ? ' · 订单' + esc(p.source_order_number) : ''}</option>`
+                ).join('')
+                : '<option value="">（暂无生产单）</option>');
+            renderLines();
+            modal.show();
+        }
+
+        $('#newIssueBtn').on('click', openModal);
+        $('#addLineBtn').on('click', function () {
+            state.lines.push({ material_id: materials.length ? materials[0].id : 0, quantity: '', remark: '' });
+            renderLines();
+        });
+
+        // 一键同步需求：把每行的需求数量填入实际领用，便于按 BOM 理论用量一键领料。
+        // 包装材料跳过——它们由发货单按实际发货量核销，不在这里领。
+        $('#syncRequiredBtn').on('click', function () {
+            const lines = state.lines.filter(l => l.required_quantity != null && !lineIsPackaging(l));
+            if (!lines.length) {
+                alert('暂无可同步的材料需求（包装材料由发货时自动核销，不在此处领用）');
+                return;
+            }
+            lines.forEach(l => { l.quantity = Number(l.required_quantity) || 0; });
+            renderLines();
+        });
+
+        $('#loadNeedsBtn').on('click', async function () {
+            const id = Number($('#issueProductionOrder').val()) || 0;
+            if (!id) { alert('请先选择生产单'); return; }
+            $(this).prop('disabled', true).text('载入中...');
+            try {
+                const result = await $.getJSON(`/api/production-orders/${id}/materials`, {});
+                if (!result.success) throw new Error(result.message || '载入失败');
+                const needs = result.data || [];
+                if (!needs.length) {
+                    alert('该生产单没有材料需求（可能未维护产品用料 BOM），请手工添加');
+                    return;
+                }
+                state.lines = needs.map(n => ({
+                    material_id: n.material_id,
+                    required_quantity: Number(n.required_quantity) || 0,
+                    // 包材默认领用 0：它们在发货时按实际发货量自动核销，
+                    // 若在这里也领一遍，同一只纸箱会被扣两次。
+                    quantity: n.is_packaging ? 0 : (Number(n.required_quantity) || 0),
+                    is_packaging: !!n.is_packaging,
+                    remark: ''
+                }));
+                renderLines();
+                const packCount = state.lines.filter(l => l.is_packaging).length;
+                if (packCount) {
+                    alert(`已载入 ${state.lines.length} 行，其中 ${packCount} 行是包装材料（纸箱等）已自动置 0。\n\n包材由发货单按实际发货量自动核销，不在此处领用，这样才不会重复扣减。`);
+                }
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '载入用料需求失败');
+            } finally {
+                $(this).prop('disabled', false).text('载入用料需求');
+            }
+        });
+
+        $('#lineBody').on('change', '.line-material', function () {
+            const idx = Number($(this).data('idx'));
+            const line = state.lines[idx];
+            if (!line) return;
+            line.material_id = Number($(this).val()) || 0;
+            line.is_packaging = isPackagingMaterial(line.material_id);
+            renderLines();
+        });
+
+        $('#lineBody').on('input', '.line-qty', function () {
+            const line = state.lines[Number($(this).data('idx'))];
+            if (line) line.quantity = $(this).val();
+        });
+
+        $('#lineBody').on('input', '.line-remark', function () {
+            const line = state.lines[Number($(this).data('idx'))];
+            if (line) line.remark = $(this).val();
+        });
+
+        $('#lineBody').on('click', '.line-del', function () {
+            state.lines.splice(Number($(this).data('idx')), 1);
+            renderLines();
+        });
+
+        $('#saveIssueBtn').on('click', async function () {
+            const btn = $(this);
+            const items = [];
+            const seen = new Set();
+            const packNames = [];
+            let dup = false;
+
+            $('#lineBody tr').each(function () {
+                const sel = $(this).find('.line-material');
+                if (!sel.length) return;
+                const material_id = Number(sel.val()) || 0;
+                const quantity = Number($(this).find('.line-qty').val()) || 0;
+                const remark = ($(this).find('.line-remark').val() || '').trim();
+                if (!material_id || quantity <= 0) return;
+                if (seen.has(material_id)) { dup = true; return; }
+                seen.add(material_id);
+                if (isPackagingMaterial(material_id)) {
+                    const m = materials.find(x => Number(x.id) === Number(material_id));
+                    packNames.push(`${m ? (m.code || '') : ''} ${m ? (m.short_name || m.name_zh || m.name || '') : ''}`.trim() || `#${material_id}`);
+                }
+                items.push({ material_id: material_id, quantity: quantity, remark: remark });
+            });
+
+            if (!items.length) { alert('请填写至少一行领用数量（大于 0）'); return; }
+            if (dup) { alert('同一材料只能有一行，请合并后再保存'); return; }
+
+            // 包材已被发货单自动核销，再领一次即重复扣减，这里必须让用户明确确认。
+            if (packNames.length) {
+                const ok = confirm(
+                    `本单包含 ${packNames.length} 项包装材料：\n${packNames.join('、')}\n\n` +
+                    `这些包材在发货时会由发货单按实际发货量自动核销，在这里再领一次会被扣两次、库存变成负数。\n\n` +
+                    `如果只是按 BOM 一键填充带出来的，请取消并把它们的领用数量改为 0。\n\n` +
+                    `确实需要额外补领（如纸箱损耗）吗？`
+                );
+                if (!ok) return;
+            }
+
+            const refId = Number($('#issueProductionOrder').val()) || 0;
+            const payload = {
+                warehouse: $('#issueWarehouse').val().trim(),
+                remark: $('#issueRemark').val().trim(),
+                ref_type: refId ? 'production_order' : 'manual',
+                ref_id: refId,
+                items: items
+            };
+
+            btn.prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: '/api/inventory/issue',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '领料失败');
+                modal.hide();
+                await loadStock();
+                loadRecords();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '领料失败');
+            } finally {
+                btn.prop('disabled', false).text('保存领料');
+            }
+        });
+
+        $('#searchBtn,#refreshBtn').on('click', loadRecords);
+        $('#keyword').on('keydown', e => { if (e.key === 'Enter') loadRecords(); });
+
+        loadRecords();
+    });
+</script>
+{{end}}

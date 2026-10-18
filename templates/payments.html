@@ -1,0 +1,293 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">收款管理</h4>
+            <div class="text-secondary small">登记客户收款；关联 PI 后会自动回写该 PI 的已收款金额</div>
+        </div>
+        <button class="btn btn-primary" id="addPaymentBtn">+ 登记收款</button>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-4">
+                    <input id="keyword" class="form-control" placeholder="搜索客户、PI 号、方式、参考号、备注">
+                </div>
+                <div class="col-lg-3">
+                    <select id="customerFilter" class="form-select">
+                        <option value="">全部客户</option>
+                    </select>
+                </div>
+                <div class="col-lg-5 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>收款日期</th>
+                            <th>客户</th>
+                            <th>关联 PI</th>
+                            <th class="text-end">金额</th>
+                            <th>币种</th>
+                            <th>方式</th>
+                            <th>参考号</th>
+                            <th>备注</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paymentBody">
+                        <tr><td colspan="9" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="paymentCount"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="paymentForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="paymentModalTitle">登记收款</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="paymentId">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">客户 *</label>
+                            <input class="form-control" id="customerName" list="customerList" maxlength="255"
+                                   placeholder="可输入或选择已有客户">
+                            <datalist id="customerList"></datalist>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">关联 PI（可留空）</label>
+                            <select class="form-select" id="piId">
+                                <option value="">不关联 PI</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">金额 *</label>
+                            <input type="number" class="form-control" id="amount" min="0.01" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">币种</label>
+                            <select class="form-select" id="currency">
+                                <option value="USD">USD</option>
+                                <option value="CNY">CNY</option>
+                                <option value="EUR">EUR</option>
+                                <option value="GBP">GBP</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">收款日期</label>
+                            <input type="date" class="form-control" id="paidDate">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">收款方式</label>
+                            <input class="form-control" id="method" maxlength="50" placeholder="T/T、PayPal…">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">参考号</label>
+                            <input class="form-control" id="reference" maxlength="100">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">备注</label>
+                            <input class="form-control" id="remark" maxlength="500">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="savePaymentBtn">保存收款</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const api = '/api/payments';
+        const modal = new bootstrap.Modal(document.getElementById('paymentModal'));
+        let payments = [];
+        let optionsLoaded = false;
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+        const money = v => Number(v || 0).toFixed(2);
+
+        async function loadPayments() {
+            $('#paymentBody').html('<tr><td colspan="9" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON(api, {
+                    customer_name: $('#customerFilter').val(),
+                    keyword: $('#keyword').val().trim()
+                });
+                if (!result.success) throw new Error(result.message || '读取失败');
+                payments = result.data || [];
+                if (!payments.length) {
+                    $('#paymentBody').html('<tr><td colspan="9" class="text-center text-secondary py-4">暂无收款记录</td></tr>');
+                    $('#paymentCount').text('共 0 条收款记录');
+                    return;
+                }
+                $('#paymentBody').html(payments.map(p => `
+                    <tr>
+                        <td>${p.paid_date ? esc(String(p.paid_date).slice(0, 10)) : ''}</td>
+                        <td class="fw-semibold">${esc(p.customer_name)}</td>
+                        <td>${esc(p.pi_number)}</td>
+                        <td class="text-end">${money(p.amount)}</td>
+                        <td>${esc(p.currency)}</td>
+                        <td>${esc(p.method)}</td>
+                        <td>${esc(p.reference)}</td>
+                        <td>${esc(p.remark)}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary edit-payment" data-id="${p.id}">编辑</button>
+                            <button class="btn btn-sm btn-outline-danger delete-payment" data-id="${p.id}">删除</button>
+                        </td>
+                    </tr>
+                `).join(''));
+                const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
+                $('#paymentCount').text(`共 ${payments.length} 条，金额合计 ${money(total)}`);
+            } catch (err) {
+                $('#paymentBody').html(
+                    `<tr><td colspan="9" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadOptions(keepPI) {
+            try {
+                const [customers, pis, settings] = await Promise.all([
+                    $.getJSON(`${api}/customers`),
+                    $.getJSON('/api/proforma-invoices'),
+                    $.getJSON('/api/settings')
+                ]);
+
+                const names = customers.data || [];
+                $('#customerList').html(names.map(n => `<option value="${esc(n)}"></option>`).join(''));
+                $('#customerFilter').html('<option value="">全部客户</option>' +
+                    names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join(''));
+
+                const piList = pis.data || [];
+                $('#piId').html('<option value="">不关联 PI</option>' + piList.map(p =>
+                    `<option value="${p.id}">${esc(p.pi_number)} · ${esc(p.customer_name)}</option>`).join(''));
+                if (keepPI) $('#piId').val(keepPI);
+
+                const settingsMap = {};
+                (settings.data || []).forEach(s => { settingsMap[s.key] = s.value; });
+                if (settingsMap.default_currency) $('#currency').val(settingsMap.default_currency);
+
+                optionsLoaded = true;
+            } catch (err) { /* 忽略 */ }
+        }
+
+        function resetForm() {
+            $('#paymentForm')[0].reset();
+            $('#paymentId').val('');
+            $('#amount').val('0');
+            $('#paidDate').val(new Date().toISOString().slice(0, 10));
+        }
+
+        $('#addPaymentBtn').on('click', async function () {
+            resetForm();
+            await loadOptions();
+            $('#paymentModalTitle').text('登记收款');
+            modal.show();
+        });
+
+        $('#paymentBody').on('click', '.edit-payment', async function () {
+            const id = Number($(this).data('id'));
+            try {
+                const p = payments.find(x => Number(x.id) === id);
+                await loadOptions(p ? p.pi_id : null);
+                if (!p) throw new Error('未找到收款记录');
+
+                resetForm();
+                $('#paymentId').val(p.id);
+                $('#customerName').val(p.customer_name);
+                $('#piId').val(p.pi_id || '');
+                $('#amount').val(p.amount);
+                $('#currency').val(p.currency || 'USD');
+                $('#paidDate').val(p.paid_date ? String(p.paid_date).slice(0, 10) : '');
+                $('#method').val(p.method || '');
+                $('#reference').val(p.reference || '');
+                $('#remark').val(p.remark || '');
+                $('#paymentModalTitle').text('编辑收款');
+                modal.show();
+            } catch (err) {
+                alert(err.message || '读取收款失败');
+            }
+        });
+
+        $('#paymentForm').on('submit', async function (e) {
+            e.preventDefault();
+            const id = $('#paymentId').val();
+            const payload = {
+                customer_name: $('#customerName').val().trim(),
+                pi_id: Number($('#piId').val()) || null,
+                amount: Number($('#amount').val()) || 0,
+                currency: $('#currency').val(),
+                paid_date: $('#paidDate').val() || null,
+                method: $('#method').val().trim(),
+                reference: $('#reference').val().trim(),
+                remark: $('#remark').val().trim()
+            };
+
+            if (!payload.customer_name) { alert('请填写客户'); return; }
+            if (payload.amount <= 0) { alert('收款金额必须大于0'); return; }
+
+            $('#savePaymentBtn').prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: id ? `${api}/${id}` : api,
+                    method: id ? 'PUT' : 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                modal.hide();
+                await loadPayments();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '保存收款失败');
+            } finally {
+                $('#savePaymentBtn').prop('disabled', false).text('保存收款');
+            }
+        });
+
+        $('#paymentBody').on('click', '.delete-payment', async function () {
+            const id = Number($(this).data('id'));
+            if (!confirm('确定删除这条收款记录吗？')) return;
+            try {
+                const result = await $.ajax({ url: `${api}/${id}`, method: 'DELETE', dataType: 'json' });
+                if (!result.success) throw new Error(result.message || '删除失败');
+                await loadPayments();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '删除失败');
+            }
+        });
+
+        $('#searchBtn,#refreshBtn').on('click', loadPayments);
+        $('#customerFilter').on('change', loadPayments);
+        $('#keyword').on('keydown', e => { if (e.key === 'Enter') loadPayments(); });
+
+        loadPayments();
+        loadOptions();
+    });
+</script>
+{{end}}

@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .title}}{{.title}}{{else}}采购明细 - OrderAI{{end}}</title>
+    <style>
+        :root { --line: #d8dee9; --muted: #6b7280; --brand: #5268d5; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 16px;
+            background: #f4f6fa;
+            color: #1f2937;
+            font: 13.5px/1.55 "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+        }
+        .toolbar {
+            max-width: 980px;
+            margin: 0 auto 10px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .btn {
+            border: 1px solid var(--line);
+            background: #fff;
+            color: #1f2937;
+            border-radius: 6px;
+            padding: 7px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+        .sheet {
+            max-width: 1040px;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 22px 24px 18px;
+        }
+
+        h1 { font-size: 20px; margin: 0 0 8px; }
+        h1 .no { color: var(--brand); margin-left: 6px; }
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 12px;
+            color: var(--muted);
+            font-size: 12.5px;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 8px 0;
+            margin-bottom: 14px;
+        }
+        .meta span b { color: #1f2937; font-weight: 600; }
+
+        /* 列宽交给浏览器按内容分配，窄窗口下产品名列不会被固定宽度挤扁。 */
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid var(--line); padding: 9px 10px; vertical-align: middle; }
+        thead th { background: #f1f4f9; font-weight: 600; text-align: left; font-size: 13px; }
+        td.num, th.num { text-align: right; white-space: nowrap; }
+        td.ctr, th.ctr { text-align: center; white-space: nowrap; }
+        /* 产品名列吸收剩余宽度，窄窗口下也不会被固定列挤扁。   th.wide { width: 100%; } */
+     
+        tr.total td { font-weight: 700; background: #fafbfe; font-size: 14px; }
+        h2 { font-size: 15px; margin: 18px 0 8px; color: var(--brand); }
+        .cell-name { font-weight: 600; }
+        .note { margin-top: 10px; color: var(--muted); font-size: 12px; }
+        .foot {
+            margin-top: 16px;
+            padding-top: 8px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 11.5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .empty { padding: 30px; text-align: center; color: var(--muted); }
+
+        /* 列表标题行：左边是「产品（N 项）」，右上角是隐藏/显示全部按钮。 */
+        .list-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin: 18px 0 8px;
+        }
+        .list-head h2 { margin: 0; }
+        .list-tools { display: flex; align-items: center; gap: 8px; }
+        .hint { color: var(--muted); font-size: 12px; }
+        .btn-mini { padding: 4px 10px; font-size: 12px; border-radius: 5px; }
+        .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+        /* 勾选框列：屏幕上是挑选行用的，打印与「干净视图」下都不出现。 */
+        .pick-col { width: 34px; }
+        .pick-col input { width: 15px; height: 15px; cursor: pointer; margin: 0; vertical-align: middle; }
+        tr.row-hidden { display: none; }
+        body.clean .pick-col,
+        body.clean .list-tools { display: none; }
+
+        @page { size: A4 portrait; margin: 12mm; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .toolbar { display: none !important; }
+            .pick-col { display: none !important; }
+            .list-tools { display: none !important; }
+            .sheet { border: 0; border-radius: 0; padding: 0; max-width: none; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button class="btn" id="cleanViewBtn" title="隐藏勾选框与行内按钮，截图更干净">隐藏勾选框</button>
+        <button class="btn" id="backBtn">返回</button>
+        <button class="btn btn-primary" id="printBtn">打印 / 保存为 PDF</button>
+    </div>
+
+    <div class="sheet" id="sheet">
+        <div class="empty">正在加载…</div>
+    </div>
+
+<script>
+    var PO_ID = {{if .id}}{{.id}}{{else}}0{{end}};
+    var SKUS = {};
+
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function qty(v) { return Number(v || 0).toFixed(3).replace(/\.?0+$/, ''); }
+    function money(v) { return Number(v || 0).toFixed(2); }
+    function day(v) { return v ? String(v).slice(0, 10) : ''; }
+    function stamp(v) { return v ? String(v).replace('T', ' ').slice(0, 16) : ''; }
+    function getJSON(url) { return fetch(url).then(function (r) { return r.json(); }); }
+
+    // 型号一般就是产品名的前缀，SKU 已删除时用它把颜色拆出来。
+    function stripModel(name, model) {
+        if (!model) return '';
+        return String(name).indexOf(model) === 0 ? String(name).slice(model.length) : '';
+    }
+
+    async function load() {
+        var sheet = document.getElementById('sheet');
+        try {
+            var res = await Promise.all([
+                getJSON('/api/purchase-orders/' + PO_ID),
+                getJSON('/api/skus')
+            ]);
+            if (!res[0].success) throw new Error(res[0].message || '读取采购单失败');
+            (res[1].data || []).forEach(function (s) { SKUS[s.id] = s; });
+
+            var po = res[0].data;
+            var order = null;
+            if (po.source_order_id) {
+                try {
+                    var o = await getJSON('/api/orders/' + po.source_order_id);
+                    if (o && o.success) order = o.data;
+                } catch (e) { /* 忽略 */ }
+            }
+            render(po, order);
+        } catch (err) {
+            sheet.innerHTML = '<div class="empty">' + esc(err.message || '读取失败') + '</div>';
+        }
+    }
+
+    var FREIGHT = 0;
+
+    // 行首勾选框：勾选 = 选中这一行（给「隐藏勾选」用），不直接控制显隐。
+    // 隐藏/恢复只影响截图视图，不动单据数据、不落库。
+    function pickCell() {
+        return '<td class="ctr pick-col"><input type="checkbox" class="row-pick" title="勾选此行后点「隐藏勾选」可把它隐藏"></td>';
+    }
+    function rowAttrs(kind, quantity, amount, extra) {
+        var attrs = ' data-kind="' + kind + '" data-qty="' + Number(quantity || 0) + '" data-amount="' + Number(amount || 0) + '"';
+        return attrs + (extra || '');
+    }
+
+    function render(po, order) {
+        var items = po.items || [];
+        // 产品与材料分列，避免混在一起。
+        var products = items.filter(function (it) { return it.item_type !== 'material'; });
+        var materials = items.filter(function (it) { return it.item_type === 'material'; });
+
+        var prodQty = 0, prodAmount = 0, matQty = 0, matAmount = 0;
+
+        var productRows = products.map(function (it, i) {
+            var sku = it.item_id ? SKUS[it.item_id] : null;
+            var name = (sku && sku.product_name_zh) || it.item_name || '';
+            var model = (sku && sku.model) || it.spec || '';
+            var color = (sku && sku.color) || stripModel(name, model);
+            var quantity = Number(it.quantity || 0);
+            var amount = Number(it.amount || 0);
+
+            prodQty += quantity;
+            prodAmount += amount;
+
+            return '<tr' + rowAttrs('product', quantity, amount) + '>'
+                + pickCell()
+                + '<td class="ctr row-no">' + (i + 1) + '</td>'
+                + '<td class="cell-name">' + esc(name) + '</td>'
+                + '<td>' + esc(model) + '</td>'
+                + '<td>' + esc(color) + '</td>'
+                + '<td class="num">' + qty(quantity) + '</td>'
+                + '<td class="num">' + money(it.unit_price) + '</td>'
+                + '<td class="num">' + money(amount) + '</td>'
+                + '</tr>';
+        }).join('');
+
+        var materialRows = materials.map(function (it, i) {
+            var quantity = Number(it.quantity || 0);
+            var amount = Number(it.amount || 0);
+
+            matQty += quantity;
+            matAmount += amount;
+
+            // data-spec / data-price 供下方「按规格统计」分组用（随行隐藏一起变化）。
+            var extra = ' data-spec="' + esc(it.spec || '') + '" data-price="' + Number(it.unit_price || 0) + '"';
+
+            return '<tr' + rowAttrs('material', quantity, amount, extra) + '>'
+                + pickCell()
+                + '<td class="ctr row-no">' + (i + 1) + '</td>'
+                + '<td class="cell-name">' + esc(it.item_name || it.short_name || it.item_code) + '</td>'
+                + '<td>' + esc(it.spec || '') + '</td>'
+                + '<td class="num">' + qty(quantity) + '</td>'
+                + '<td class="num">' + money(it.unit_price) + '</td>'
+                + '<td class="num">' + money(amount) + '</td>'
+                + '</tr>';
+        }).join('');
+
+        if (!products.length) {
+            productRows = '<tr><td colspan="8" class="empty">无产品明细</td></tr>';
+        }
+        if (!materials.length) {
+            materialRows = '<tr><td colspan="7" class="empty">无材料明细</td></tr>';
+        }
+
+        var currency = po.currency || 'CNY';
+        FREIGHT = Number(po.freight_amount || 0);
+        var meta = [
+            ['客户', (order && order.customer) || '—'],
+            ['国家', (order && order.country) || '—'],
+            ['运输方式', (order && order.shipping_method) || '—'],
+            ['订单时间', stamp(order && order.created_at) || day(po.order_date) || '—'],
+            ['来源订单', po.source_order_number || '—'],
+            ['制表时间', new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')]
+        ].map(function (kv) {
+            return '<span>' + esc(kv[0]) + '：<b>' + esc(kv[1]) + '</b></span>';
+        }).join('');
+
+        document.getElementById('sheet').innerHTML = ''
+            + '<h1>采购批次汇总<span class="no">' + esc(po.po_number) + '</span></h1>'
+            + '<div class="meta">' + meta + '</div>'
+            + '<div class="list-head">'
+            + '<h2>产品（<span id="productCount">' + products.length + '</span> 项）</h2>'
+            + '<div class="list-tools">'
+            + '<span class="hint" id="productHidden"></span>'
+            + '<button class="btn btn-mini hide-picked-btn" type="button" data-kind="product">隐藏勾选</button>'
+            + '<button class="btn btn-mini show-all-btn" type="button" data-kind="product">显示全部</button>'
+            + '</div></div>'
+            + '<table>'
+            + '<thead><tr>'
+            + '<th class="ctr pick-col"><input type="checkbox" class="pick-all" data-kind="product" title="全选 / 全不选"></th>'
+            + '<th class="ctr">序号</th>'
+            + '<th class="wide">产品中文名</th>'
+            + '<th>型号</th>'
+            + '<th>颜色</th>'
+            + '<th class="num">采购数量</th>'
+            + '<th class="num">单价</th>'
+            + '<th class="num">金额</th>'
+            + '</tr></thead>'
+            + '<tbody id="productBody">' + productRows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td class="pick-col"></td>'
+            + '<td colspan="4">产品合计</td>'
+            + '<td class="num" id="pQty">' + qty(prodQty) + '</td>'
+            + '<td></td>'
+            + '<td class="num" id="pAmount">' + money(prodAmount) + '</td>'
+            + '</tr></tfoot>'
+            + '</table>'
+            + '<div class="list-head">'
+            + '<h2>材料（<span id="materialCount">' + materials.length + '</span> 项）</h2>'
+            + '<div class="list-tools">'
+            + '<span class="hint" id="materialHidden"></span>'
+            + '<button class="btn btn-mini hide-picked-btn" type="button" data-kind="material">隐藏勾选</button>'
+            + '<button class="btn btn-mini show-all-btn" type="button" data-kind="material">显示全部</button>'
+            + '</div></div>'
+            + '<table>'
+            + '<thead><tr>'
+            + '<th class="ctr pick-col"><input type="checkbox" class="pick-all" data-kind="material" title="全选 / 全不选"></th>'
+            + '<th class="ctr">序号</th>'
+            + '<th class="wide">材料</th>'
+            + '<th>规格</th>'
+            + '<th class="num">用量</th>'
+            + '<th class="num">单价</th>'
+            + '<th class="num">金额</th>'
+            + '</tr></thead>'
+            + '<tbody id="materialBody">' + materialRows + '</tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td class="pick-col"></td>'
+            + '<td colspan="3">材料合计</td>'
+            + '<td class="num" id="mQty">' + qty(matQty) + '</td>'
+            + '<td></td>'
+            + '<td class="num" id="mAmount">' + money(matAmount) + '</td>'
+            + '</tr></tfoot>'
+            + '</table>'
+            // 按规格统计：同一纸箱规格合并成一行（用量/金额累加），方便直接报给纸箱厂。
+            // 只统计当前可见的材料行，与上面的合计口径一致。
+            + '<div id="specBlock">'
+            + '<div class="list-head"><h2>按规格统计</h2>'
+            + '<div class="list-tools"><span class="hint">同一规格合并计算，随上方隐藏行一起变化</span></div></div>'
+            + '<table>'
+            + '<thead><tr>'
+            + '<th class="ctr pick-col"></th>'
+            + '<th class="ctr">序号</th>'
+            + '<th class="wide">规格</th>'
+            + '<th class="num">用量</th>'
+            + '<th class="num">单价</th>'
+            + '<th class="num">金额</th>'
+            + '</tr></thead>'
+            + '<tbody id="specBody"></tbody>'
+            + '<tfoot><tr class="total">'
+            + '<td class="pick-col"></td>'
+            + '<td colspan="2">合计</td>'
+            + '<td class="num" id="specQty">0</td>'
+            + '<td></td>'
+            + '<td class="num" id="specAmount">0.00</td>'
+            + '</tr></tfoot>'
+            + '</table>'
+            + '</div>'
+            + '<div class="note">本单产品与材料分列；货款 <span id="noteGoods">' + money(po.goods_amount)
+            + '</span> ＋ 运费 ' + money(FREIGHT)
+            + ' ＝ <b>合计 <span id="noteTotal">' + money(po.total_amount) + '</span> ' + esc(currency) + '</b>。</div>'
+            + '<div class="foot"><span>OrderAI · 采购批次汇总</span><span>' + esc(po.po_number) + '</span></div>';
+
+        refresh();
+    }
+
+    // 按当前可见行重算：序号重排、小计、页脚货款/合计。隐藏的行一律不计入（截图给某个厂家时数字才对得上）。
+    var TABLES = [
+        { kind: 'product', body: 'productBody', count: 'productCount', hidden: 'productHidden', qty: 'pQty', amount: 'pAmount' },
+        { kind: 'material', body: 'materialBody', count: 'materialCount', hidden: 'materialHidden', qty: 'mQty', amount: 'mAmount' }
+    ];
+
+    function rowsOf(kind) {
+        var body = document.getElementById(kind === 'product' ? 'productBody' : 'materialBody');
+        if (!body) return [];
+        return Array.prototype.slice.call(body.querySelectorAll('tr[data-kind="' + kind + '"]'));
+    }
+    function isHidden(tr) { return tr.classList.contains('row-hidden'); }
+
+    // 按规格统计：把当前**可见**的材料行按规格归并，用量与金额累加。
+    // 单价只有整组一致时才显示（不一致显示 —），避免给出一个误导的数字。
+    function renderSpecSummary() {
+        var body = document.getElementById('specBody');
+        var block = document.getElementById('specBlock');
+        if (!body || !block) return;
+
+        var groups = {};
+        var keys = [];
+
+        rowsOf('material').forEach(function (tr) {
+            if (isHidden(tr)) return;
+            var spec = String(tr.getAttribute('data-spec') || '').trim();
+            var g = groups[spec];
+            if (!g) {
+                g = { spec: spec, qty: 0, amount: 0, price: null, mixed: false };
+                groups[spec] = g;
+                keys.push(spec);
+            }
+            var price = Number(tr.getAttribute('data-price') || 0);
+            if (g.price === null) g.price = price;
+            else if (g.price !== price) g.mixed = true;
+            g.qty += Number(tr.getAttribute('data-qty') || 0);
+            g.amount += Number(tr.getAttribute('data-amount') || 0);
+        });
+
+        if (!keys.length) {
+            block.style.display = 'none';
+            return;
+        }
+        block.style.display = '';
+
+        // 有规格的按规格升序，未填规格的排最后。
+        keys.sort(function (a, b) {
+            if (!a) return 1;
+            if (!b) return -1;
+            return a < b ? -1 : (a > b ? 1 : 0);
+        });
+
+        var totalQty = 0, totalAmount = 0;
+        body.innerHTML = keys.map(function (key, i) {
+            var g = groups[key];
+            totalQty += g.qty;
+            totalAmount += g.amount;
+            var priceCell = g.mixed
+                ? '<td class="num" title="本规格有多个单价，请按上方明细核对">—</td>'
+                : '<td class="num">' + money(g.price) + '</td>';
+            return '<tr>'
+                + '<td class="pick-col"></td>'
+                + '<td class="ctr">' + (i + 1) + '</td>'
+                + '<td class="cell-name">' + (g.spec ? esc(g.spec) : '<span class="hint">未填规格</span>') + '</td>'
+                + '<td class="num">' + qty(g.qty) + '</td>'
+                + priceCell
+                + '<td class="num">' + money(g.amount) + '</td>'
+                + '</tr>';
+        }).join('');
+
+        var qtyEl = document.getElementById('specQty');
+        if (qtyEl) qtyEl.textContent = qty(totalQty);
+        var amountEl = document.getElementById('specAmount');
+        if (amountEl) amountEl.textContent = money(totalAmount);
+    }
+
+    function refresh() {
+        var goods = 0;
+        TABLES.forEach(function (t) {
+            var rows = rowsOf(t.kind);
+            var shown = 0, qtySum = 0, amountSum = 0, picked = 0;
+            rows.forEach(function (tr) {
+                if (isHidden(tr)) return;
+                shown += 1;
+                var noEl = tr.querySelector('.row-no');
+                if (noEl) noEl.textContent = shown;
+                qtySum += Number(tr.getAttribute('data-qty') || 0);
+                amountSum += Number(tr.getAttribute('data-amount') || 0);
+                var box = tr.querySelector('.row-pick');
+                if (box && box.checked) picked += 1;
+            });
+
+            var countEl = document.getElementById(t.count);
+            if (countEl) countEl.textContent = shown;
+            var qtyEl = document.getElementById(t.qty);
+            if (qtyEl) qtyEl.textContent = qty(qtySum);
+            var amountEl = document.getElementById(t.amount);
+            if (amountEl) amountEl.textContent = money(amountSum);
+
+            var hiddenCount = rows.length - shown;
+            var hintEl = document.getElementById(t.hidden);
+            if (hintEl) hintEl.textContent = hiddenCount > 0 ? ('已隐藏 ' + hiddenCount + ' 行') : '';
+
+            // 表头全选框：全勾 / 半勾 / 未勾三态。
+            var allBox = document.querySelector('.pick-all[data-kind="' + t.kind + '"]');
+            if (allBox) {
+                allBox.checked = shown > 0 && picked === shown;
+                allBox.indeterminate = picked > 0 && picked < shown;
+                allBox.disabled = shown === 0;
+            }
+            // 「隐藏勾选」没勾选任何行时不可点；「显示全部」没有隐藏行时不可点。
+            var hideBtn = document.querySelector('.hide-picked-btn[data-kind="' + t.kind + '"]');
+            if (hideBtn) hideBtn.disabled = picked === 0;
+            var showBtn = document.querySelector('.show-all-btn[data-kind="' + t.kind + '"]');
+            if (showBtn) showBtn.disabled = hiddenCount === 0;
+
+            goods += amountSum;
+        });
+
+        var goodsEl = document.getElementById('noteGoods');
+        if (goodsEl) goodsEl.textContent = money(goods);
+        var totalEl = document.getElementById('noteTotal');
+        if (totalEl) totalEl.textContent = money(goods + FREIGHT);
+
+        // 规格统计跟着可见材料行走：隐藏的行不再计入。
+        renderSpecSummary();
+    }
+
+    // 勾选只表示「选中这些行」，不直接控制显隐：勾好再点「隐藏勾选」。事件委托挂在 #sheet 上，重绘后无需重新绑定。
+    document.getElementById('sheet').addEventListener('change', function (e) {
+        var box = e.target;
+        if (!box.classList) return;
+        if (box.classList.contains('pick-all')) {
+            var kind = box.getAttribute('data-kind');
+            rowsOf(kind).forEach(function (tr) {
+                if (isHidden(tr)) return;
+                var b = tr.querySelector('.row-pick');
+                if (b) b.checked = box.checked;
+            });
+        }
+        refresh();
+    });
+
+    document.getElementById('sheet').addEventListener('click', function (e) {
+        if (!e.target.closest) return;
+
+        // 隐藏勾选：把勾选中的可见行隐藏，并清掉它们的勾选（已不在视图里）。
+        var hideBtn = e.target.closest('.hide-picked-btn');
+        if (hideBtn) {
+            rowsOf(hideBtn.getAttribute('data-kind')).forEach(function (tr) {
+                var box = tr.querySelector('.row-pick');
+                if (isHidden(tr) || !box || !box.checked) return;
+                tr.classList.add('row-hidden');
+                box.checked = false;
+            });
+            refresh();
+            return;
+        }
+
+        // 显示全部：所有行恢复显示，勾选一并清空，回到初始状态。
+        var showBtn = e.target.closest('.show-all-btn');
+        if (showBtn) {
+            rowsOf(showBtn.getAttribute('data-kind')).forEach(function (tr) {
+                tr.classList.remove('row-hidden');
+                var box = tr.querySelector('.row-pick');
+                if (box) box.checked = false;
+            });
+            refresh();
+        }
+    });
+
+    document.getElementById('printBtn').addEventListener('click', function () { window.print(); });
+    document.getElementById('backBtn').addEventListener('click', function () {
+        if (window.history.length > 1) { window.history.back(); }
+        else { window.location.href = '/purchase-orders'; }
+    });
+    // 干净视图：隐藏勾选框列与行内按钮，直接屏幕截图也能发给厂家。
+    (function () {
+        var btn = document.getElementById('cleanViewBtn');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            var clean = document.body.classList.toggle('clean');
+            btn.textContent = clean ? '显示勾选框' : '隐藏勾选框';
+        });
+    })();
+
+    load();
+</script>
+</body>
+</html>

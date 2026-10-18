@@ -1,0 +1,1225 @@
+ {{define "content"}}
+    <style>
+        body {
+            background: #f5f6f8;
+        }
+
+        .page-container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .page-header {
+            display: block ruby;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .page-title {
+            font-size: 26px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .page-subtitle {
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
+        .card {
+            border: none;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .table {
+            margin-bottom: 0;
+        }
+
+        .table th {
+            background: #f8f9fa;
+            white-space: nowrap;
+            font-weight: 600;
+        }
+
+        .table td {
+            vertical-align: middle;
+        }
+
+        .order-number {
+            font-weight: 600;
+            color: #0d6efd;
+        }
+
+        .empty {
+            padding: 60px 20px;
+            text-align: center;
+            color: #6c757d;
+        }
+
+        .loading {
+            padding: 50px;
+            text-align: center;
+        }
+
+        .status-badge {
+            min-width: 70px;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .search-box {
+            width: 320px;
+        }
+
+        /* ---------- 订单源图查看 ---------- */
+
+        #orderImageModal .modal-dialog {
+            max-width: 96vw;
+        }
+
+        .order-image-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .order-image-viewport {
+            position: relative;
+            height: 74vh;
+            overflow: auto;
+            background: #f0f1f5;
+            border: 1px solid #e2e5ec;
+            border-radius: 8px;
+            cursor: grab;
+            text-align: center;
+        }
+
+        .order-image-viewport.dragging {
+            cursor: grabbing;
+        }
+
+        .order-image-viewport img {
+            display: block;
+            margin: 0 auto;
+            max-width: none;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        .order-image-zoom-label {
+            min-width: 62px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            color: #495057;
+        }
+
+        @media (max-width: 768px) {
+
+            .page-header {
+                display: block;
+            }
+
+            .page-header .btn {
+                margin-top: 15px;
+            }
+
+            .toolbar {
+                display: block;
+            }
+
+            .search-box {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+
+            .toolbar .btn {
+                width: 100%;
+            }
+        }
+    </style>
+ 
+
+ 
+
+<div class="page-container">
+
+    <!-- 页面标题 -->
+    <div class="page-header">
+
+        <div>
+            <h1 class="page-title">订单管理</h1>
+
+            <div class="page-subtitle">
+                管理所有已经确认并入库的订单
+            </div>
+        </div>
+
+        <a href="/orders/new" class="btn btn-primary">
+            ＋ 新建订单
+        </a>
+ <a href="/orderupload" class="btn btn-primary">
+                <span class="nav-icon">✦</span>
+                <span>AI订单识别</span>
+            </a>
+    </div>
+
+
+    <!-- 工具栏 -->
+    <div class="card mb-3">
+
+        <div class="card-body">
+
+            <div class="toolbar">
+
+                <input
+                    type="text"
+                    id="searchInput"
+                    class="form-control search-box"
+                    placeholder="搜索订单号 / 客户 / 国家..."
+                >
+
+                <button
+                    type="button"
+                    class="btn btn-outline-secondary"
+                    onclick="loadOrders()">
+                    刷新
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- 订单列表 -->
+    <div class="card">
+
+        <div class="card-body p-0">
+
+            <div id="loading" class="loading">
+                <div class="spinner-border text-primary"></div>
+                <div class="mt-3">
+                    正在加载订单...
+                </div>
+            </div>
+
+
+            <div
+                id="empty"
+                class="empty"
+                style="display:none;">
+                暂无订单
+            </div>
+
+
+            <div
+                id="tableContainer"
+                class="table-responsive"
+                style="display:none;">
+
+                <table class="table table-hover">
+
+                    <thead>
+
+                    <tr>
+                        <th>ID</th>
+                        <th>订单号</th>
+                        <th>国家</th>
+                        <th>运输方式</th>
+                        <th>客户</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th style="width:310px;">操作</th>
+                    </tr>
+
+                    </thead>
+
+                    <tbody id="ordersTableBody"></tbody>
+
+                </table>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- 订单源图查看弹窗 -->
+<div class="modal fade" id="orderImageModal" tabindex="-1" aria-hidden="true">
+
+    <div class="modal-dialog modal-dialog-centered">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <div>
+                    <h5 class="modal-title mb-0" id="orderImageTitle">
+                        订单源图
+                    </h5>
+                    <div class="small text-muted" id="orderImageSubtitle"></div>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <div class="modal-body">
+
+                <div class="order-image-toolbar mb-2">
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        onclick="zoomOrderImage(-1)">
+                        － 缩小
+                    </button>
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        onclick="zoomOrderImage(1)">
+                        ＋ 放大
+                    </button>
+
+                    <span
+                        class="order-image-zoom-label small"
+                        id="orderImageZoomLabel">
+                        100%
+                    </span>
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        onclick="fitOrderImage()">
+                        适应窗口
+                    </button>
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        onclick="setOrderImageScale(1)">
+                        原始大小
+                    </button>
+
+                    <a
+                        href="#"
+                        id="orderImageOriginalLink"
+                        target="_blank"
+                        rel="noopener"
+                        class="btn btn-sm btn-outline-primary ms-auto">
+                        新窗口打开
+                    </a>
+
+                </div>
+
+                <div
+                    class="order-image-viewport"
+                    id="orderImageViewport">
+
+                    <img
+                        id="orderImagePreview"
+                        src=""
+                        alt="订单源图">
+
+                </div>
+
+                <div class="small text-muted mt-2">
+                    滚轮或按钮缩放，按住鼠标拖动平移，放大后可看清产品数量。
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+let allOrders = [];
+
+
+/* ============================
+   页面初始化
+============================ */
+
+$(document).ready(function () {
+
+    loadOrders();
+
+
+    // 搜索框
+    $("#searchInput").on("input", function () {
+
+        renderOrders(
+            $(this).val().trim()
+        );
+
+    });
+
+
+    // 源图弹窗：滚轮缩放 + 按住拖动平移
+    const imageViewport =
+        document.getElementById("orderImageViewport");
+
+
+    if (imageViewport) {
+
+        imageViewport.addEventListener("wheel", function (event) {
+
+            if (!orderImageState.loaded) {
+                return;
+            }
+
+            event.preventDefault();
+
+            zoomOrderImage(event.deltaY < 0 ? 1 : -1);
+
+        }, { passive: false });
+
+
+        let dragging = false;
+        let startX = 0;
+        let startY = 0;
+        let startScrollLeft = 0;
+        let startScrollTop = 0;
+
+
+        imageViewport.addEventListener("mousedown", function (event) {
+
+            if (!orderImageState.loaded || event.button !== 0) {
+                return;
+            }
+
+            dragging = true;
+            startX = event.clientX;
+            startY = event.clientY;
+            startScrollLeft = imageViewport.scrollLeft;
+            startScrollTop = imageViewport.scrollTop;
+
+            imageViewport.classList.add("dragging");
+
+            event.preventDefault();
+
+        });
+
+
+        document.addEventListener("mousemove", function (event) {
+
+            if (!dragging) {
+                return;
+            }
+
+            imageViewport.scrollLeft =
+                startScrollLeft - (event.clientX - startX);
+
+            imageViewport.scrollTop =
+                startScrollTop - (event.clientY - startY);
+
+        });
+
+
+        document.addEventListener("mouseup", function () {
+
+            if (!dragging) {
+                return;
+            }
+
+            dragging = false;
+
+            imageViewport.classList.remove("dragging");
+
+        });
+
+
+        const modalElement =
+            document.getElementById("orderImageModal");
+
+
+        if (modalElement) {
+
+            modalElement.addEventListener("shown.bs.modal", function () {
+
+                fitOrderImage();
+
+            });
+
+        }
+
+    }
+
+});
+
+
+/* ============================
+   加载订单
+============================ */
+
+function loadOrders() {
+
+    $("#loading").show();
+    $("#empty").hide();
+    $("#tableContainer").hide();
+
+    $.ajax({
+
+        url: "/api/orders",
+
+        type: "GET",
+
+        success: function (res) {
+
+            console.log("订单数据：", res);
+
+            if (!res.success) {
+
+                alert(
+                    res.message || "订单加载失败"
+                );
+
+                return;
+            }
+
+
+            allOrders = res.data || [];
+
+            renderOrders(
+                $("#searchInput").val().trim()
+            );
+
+        },
+
+        error: function (xhr) {
+
+            console.error(xhr);
+
+            alert("订单加载失败，请检查服务器");
+
+        },
+
+        complete: function () {
+
+            $("#loading").hide();
+
+        }
+
+    });
+
+}
+
+
+/* ============================
+   渲染订单
+============================ */
+
+function renderOrders(keyword) {
+
+    const tbody = $("#ordersTableBody");
+
+    tbody.empty();
+
+
+    let orders = allOrders;
+
+
+    // 搜索
+    if (keyword) {
+
+        const key =
+            keyword.toLowerCase();
+
+        orders = allOrders.filter(function (order) {
+
+            return (
+
+                String(order.id)
+                    .toLowerCase()
+                    .includes(key)
+
+                ||
+
+                (order.order_number || "")
+                    .toLowerCase()
+                    .includes(key)
+
+                ||
+
+                (order.customer || "")
+                    .toLowerCase()
+                    .includes(key)
+
+                ||
+
+                (order.country || "")
+                    .toLowerCase()
+                    .includes(key)
+
+            );
+
+        });
+
+    }
+
+
+    // 没有结果
+    if (orders.length === 0) {
+
+        $("#tableContainer").hide();
+
+        $("#empty")
+            .text(
+                keyword
+                    ? "没有找到符合条件的订单"
+                    : "暂无订单"
+            )
+            .show();
+
+        return;
+    }
+
+
+    $("#empty").hide();
+
+    $("#tableContainer").show();
+
+
+    orders.forEach(function (order) {
+
+        const status = getStatusBadge(
+            order.status
+        );
+
+
+        const html = `
+
+            <tr>
+
+                <td>
+                    ${order.id}
+                </td>
+
+                <td>
+
+                    <span class="order-number">
+                        ${escapeHtml(
+                            order.order_number
+                        )}
+                    </span>
+
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        order.country || "-"
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        order.shipping_method || "-"
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        order.customer || "-"
+                    )}
+                </td>
+
+                <td>
+                    ${status}
+                </td>
+
+                <td>
+                    ${formatDate(
+                        order.created_at
+                    )}
+                </td>
+
+                <td>
+
+                    <a
+                        href="/orders/${order.id}"
+                        class="btn btn-sm btn-outline-primary">
+                        查看
+                    </a>
+
+                    <a
+                        href="/orders/${order.id}/edit"
+                        class="btn btn-sm btn-outline-secondary">
+                        编辑
+                    </a>
+
+                    ${renderImageButton(order)}
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        onclick="deleteOrder(${order.id})">
+                        删除
+                    </button>
+
+                </td>
+
+            </tr>
+
+        `;
+
+        tbody.append(html);
+
+    });
+
+}
+
+
+/* ============================
+   状态
+============================ */
+
+function getStatusBadge(status) {
+
+    let text = status || "未知";
+    let cls = "bg-secondary";
+
+
+    switch (status) {
+
+        case "draft":
+
+            text = "草稿";
+            cls = "bg-secondary";
+
+            break;
+
+
+        case "confirmed":
+
+            text = "已确认";
+            cls = "bg-primary";
+
+            break;
+
+
+        case "purchasing":
+
+            text = "采购中";
+            cls = "bg-warning text-dark";
+
+            break;
+
+
+        case "producing":
+
+            text = "生产中";
+            cls = "bg-info text-dark";
+
+            break;
+
+
+        case "packing":
+
+            text = "包装中";
+            cls = "bg-info text-dark";
+
+            break;
+
+
+        case "purchased":
+
+            text = "已采购";
+            cls = "bg-primary";
+
+            break;
+
+
+        case "produced":
+
+            text = "已生产";
+            cls = "bg-info text-dark";
+
+            break;
+
+
+        case "shipped":
+
+            text = "已发货";
+            cls = "bg-info text-dark";
+
+            break;
+
+
+        case "paid":
+
+            text = "已收款";
+            cls = "bg-success";
+
+            break;
+
+
+        case "completed":
+
+            text = "完结";
+            cls = "bg-success";
+
+            break;
+
+
+        case "cancelled":
+
+            text = "已取消";
+            cls = "bg-danger";
+
+            break;
+
+    }
+
+
+    return `
+        <span class="badge ${cls} status-badge">
+            ${text}
+        </span>
+    `;
+
+}
+
+
+/* ============================
+   删除订单
+============================ */
+
+function deleteOrder(id) {
+
+    const order = allOrders.find(
+        item => Number(item.id) === Number(id)
+    );
+
+
+    if (!order) {
+
+        alert("订单不存在");
+
+        return;
+    }
+
+
+    const ok = confirm(
+        "确定要删除订单「" +
+        order.order_number +
+        "」吗？\n\n" +
+        "订单明细也会一起删除，此操作不可恢复。"
+    );
+
+
+    if (!ok) {
+        return;
+    }
+
+
+    $.ajax({
+
+        url: "/api/orders/" + id,
+
+        type: "DELETE",
+
+        success: function (res) {
+
+            if (!res.success) {
+
+                alert(
+                    res.message || "删除失败"
+                );
+
+                return;
+            }
+
+
+            alert("订单删除成功");
+
+            loadOrders();
+
+        },
+
+        error: function (xhr) {
+
+            console.error(xhr);
+
+            let message =
+                "订单删除失败";
+
+
+            if (
+                xhr.responseJSON &&
+                xhr.responseJSON.message
+            ) {
+
+                message +=
+                    "：" +
+                    xhr.responseJSON.message;
+
+            }
+
+
+            alert(message);
+
+        }
+
+    });
+
+}
+
+
+/* ============================
+   订单源图查看
+============================ */
+
+const ORDER_IMAGE_MIN_SCALE = 0.05;
+const ORDER_IMAGE_MAX_SCALE = 8;
+
+let orderImageState = {
+    scale: 1,
+    naturalWidth: 0,
+    naturalHeight: 0,
+    loaded: false
+};
+
+let orderImageModal = null;
+
+
+// orderImageURL 把库里的图片路径转成可访问地址。
+function orderImageURL(path) {
+
+    const value = String(path || "").trim();
+
+    if (!value) {
+        return "";
+    }
+
+    if (/^https?:\/\//i.test(value) || value.startsWith("/")) {
+        return value;
+    }
+
+    if (value.startsWith("uploads/")) {
+        return "/" + value;
+    }
+
+    return "/uploads/" + value;
+}
+
+
+// renderImageButton 渲染列表里的「查看图片」按钮，没有源图时置灰。
+function renderImageButton(order) {
+
+    const url = orderImageURL(
+        order.recognition_image || order.source_image
+    );
+
+    if (!url) {
+
+        return `
+            <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary"
+                disabled
+                title="该订单没有源图">
+                查看图片
+            </button>
+        `;
+    }
+
+    return `
+        <button
+            type="button"
+            class="btn btn-sm btn-outline-info"
+            onclick="openOrderImage(${Number(order.id)})">
+            查看图片
+        </button>
+    `;
+}
+
+
+function getOrderImageModal() {
+
+    if (!orderImageModal) {
+
+        orderImageModal = new bootstrap.Modal(
+            document.getElementById("orderImageModal")
+        );
+    }
+
+    return orderImageModal;
+}
+
+
+// openOrderImage 打开源图弹窗，先按窗口大小自适应再允许缩放。
+function openOrderImage(id) {
+
+    const order = allOrders.find(function (item) {
+
+        return Number(item.id) === Number(id);
+
+    });
+
+    const url = orderImageURL(
+        order &&
+        (order.recognition_image || order.source_image)
+    );
+
+    if (!url) {
+
+        alert("该订单没有可查看的源图");
+
+        return;
+    }
+
+
+    const img = document.getElementById("orderImagePreview");
+
+    orderImageState.loaded = false;
+
+
+    document.getElementById("orderImageTitle").textContent =
+        "订单源图 · " +
+        (order.order_number || ("#" + id));
+
+
+    const subtitleParts = [];
+
+    if (order.customer) {
+        subtitleParts.push(order.customer);
+    }
+
+    if (order.country) {
+        subtitleParts.push(order.country);
+    }
+
+    subtitleParts.push(url);
+
+    document.getElementById("orderImageSubtitle").textContent =
+        subtitleParts.join(" · ");
+
+
+    document.getElementById("orderImageOriginalLink").href = url;
+
+
+    img.onload = function () {
+
+        orderImageState.naturalWidth = img.naturalWidth;
+        orderImageState.naturalHeight = img.naturalHeight;
+        orderImageState.loaded = true;
+
+        fitOrderImage();
+
+    };
+
+    img.onerror = function () {
+
+        orderImageState.loaded = false;
+
+        document.getElementById("orderImageZoomLabel").textContent =
+            "加载失败";
+
+    };
+
+    img.src = url;
+
+
+    getOrderImageModal().show();
+
+}
+
+
+// setOrderImageScale 按比例设置图片尺寸，返回实际生效的比例。
+function setOrderImageScale(scale) {
+
+    const img = document.getElementById("orderImagePreview");
+    const state = orderImageState;
+
+    if (!state.loaded || state.naturalWidth <= 0) {
+
+        return state.scale;
+    }
+
+
+    let next = Number(scale);
+
+    if (!isFinite(next) || next <= 0) {
+        next = 1;
+    }
+
+    next = Math.min(
+        ORDER_IMAGE_MAX_SCALE,
+        Math.max(ORDER_IMAGE_MIN_SCALE, next)
+    );
+
+
+    img.style.width =
+        (state.naturalWidth * next) + "px";
+
+    img.style.height =
+        (state.naturalHeight * next) + "px";
+
+
+    state.scale = next;
+
+
+    document.getElementById("orderImageZoomLabel").textContent =
+        Math.round(next * 100) + "%";
+
+
+    return next;
+}
+
+
+// fitOrderImage 让整张图刚好完整显示在视口内。
+function fitOrderImage() {
+
+    const viewport = document.getElementById("orderImageViewport");
+    const state = orderImageState;
+
+    if (!state.loaded || !viewport) {
+        return;
+    }
+
+
+    const maxWidth = Math.max(viewport.clientWidth - 12, 80);
+    const maxHeight = Math.max(viewport.clientHeight - 12, 80);
+
+
+    let scale = Math.min(
+        maxWidth / state.naturalWidth,
+        maxHeight / state.naturalHeight
+    );
+
+    if (!isFinite(scale) || scale <= 0) {
+        scale = 1;
+    }
+
+    // 小图不放大，保持原始像素清晰度。
+    setOrderImageScale(Math.min(scale, 1));
+
+    viewport.scrollLeft = 0;
+    viewport.scrollTop = 0;
+
+}
+
+
+// zoomOrderImage 以当前视口中心为锚点放大或缩小，避免画面跳动。
+function zoomOrderImage(direction) {
+
+    const viewport = document.getElementById("orderImageViewport");
+
+    if (!orderImageState.loaded || !viewport) {
+        return;
+    }
+
+
+    const factor = direction > 0 ? 1.25 : 1 / 1.25;
+    const before = orderImageState.scale;
+    const after = setOrderImageScale(before * factor);
+    const ratio = before > 0 ? after / before : 1;
+
+
+    if (ratio === 1) {
+        return;
+    }
+
+
+    const centerX =
+        viewport.scrollLeft + viewport.clientWidth / 2;
+
+    const centerY =
+        viewport.scrollTop + viewport.clientHeight / 2;
+
+
+    viewport.scrollLeft =
+        centerX * ratio - viewport.clientWidth / 2;
+
+    viewport.scrollTop =
+        centerY * ratio - viewport.clientHeight / 2;
+
+}
+
+
+/* ============================
+   日期格式化
+============================ */
+
+function formatDate(value) {
+
+    if (!value) {
+        return "-";
+    }
+
+
+    const date = new Date(value);
+
+
+    if (isNaN(date.getTime())) {
+
+        return value;
+
+    }
+
+
+    const pad = function (n) {
+
+        return String(n).padStart(2, "0");
+
+    };
+
+
+    return (
+
+        date.getFullYear() +
+        "-" +
+        pad(date.getMonth() + 1) +
+        "-" +
+        pad(date.getDate()) +
+        " " +
+        pad(date.getHours()) +
+        ":" +
+        pad(date.getMinutes()) +
+        ":" +
+        pad(date.getSeconds())
+
+    );
+
+}
+
+
+/* ============================
+   HTML 安全
+============================ */
+
+function escapeHtml(value) {
+
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+}
+
+</script>
+
+ {{end}}

@@ -1,0 +1,1459 @@
+{{define "content"}}
+
+<div class="order-detail-page">
+
+    <!-- =========================
+         页面标题
+    ========================== -->
+
+    <div class="page-heading">
+
+        <div>
+
+            <div class="d-flex align-items-center gap-2">
+
+                <a
+                    href="/orders"
+                    class="btn btn-sm btn-outline-secondary">
+
+                    ← 返回
+
+                </a>
+
+                <h1 class="mb-0">
+                    订单详情
+                </h1>
+
+            </div>
+
+            <p id="pageSubtitle">
+                正在加载订单...
+            </p>
+
+        </div>
+
+
+        <div class="d-flex gap-2">
+
+            <button
+                type="button"
+                class="btn btn-outline-secondary"
+                onclick="window.location.href='/orders'">
+
+                返回订单列表
+
+            </button>
+
+            <button
+                type="button"
+                class="btn btn-primary"
+                id="editOrderBtn"
+                onclick="editOrder()">
+
+                编辑订单
+
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================
+         加载
+    ========================== -->
+
+    <div
+        id="orderLoading"
+        class="dashboard-card">
+
+        <div class="order-loading">
+
+            <div class="spinner-border text-primary"></div>
+
+            <div class="mt-3">
+                正在加载订单...
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================
+         错误
+    ========================== -->
+
+    <div
+        id="orderError"
+        class="alert alert-danger"
+        style="display:none;">
+
+    </div>
+
+
+    <!-- =========================
+         订单内容
+    ========================== -->
+
+    <div
+        id="orderContent"
+        style="display:none;">
+
+
+        <!-- =====================
+             订单基本信息
+        ====================== -->
+
+        <div class="dashboard-card mb-4">
+
+            <div class="card-header">
+
+                <div>
+
+                    <div class="card-title">
+                        订单信息
+                    </div>
+
+                    <div class="card-subtitle">
+                        订单基本资料
+                    </div>
+
+                </div>
+
+
+                <div id="orderStatus"></div>
+
+            </div>
+
+
+            <div class="order-info-grid">
+
+                <div class="order-info-item">
+
+                    <div class="order-info-label">
+                        订单号
+                    </div>
+
+                    <div
+                        class="order-info-value order-number"
+                        id="orderNumber">
+
+                        -
+
+                    </div>
+
+                </div>
+
+
+                <div class="order-info-item">
+
+                    <div class="order-info-label">
+                        客户
+                    </div>
+
+                    <div
+                        class="order-info-value"
+                        id="customer">
+
+                        -
+
+                    </div>
+
+                </div>
+
+
+                <div class="order-info-item">
+
+                    <div class="order-info-label">
+                        国家 / 地区
+                    </div>
+
+                    <div
+                        class="order-info-value"
+                        id="country">
+
+                        -
+
+                    </div>
+
+                </div>
+
+
+                <div class="order-info-item">
+
+                    <div class="order-info-label">
+                        运输方式
+                    </div>
+
+                    <div
+                        class="order-info-value"
+                        id="shippingMethod">
+
+                        -
+
+                    </div>
+
+                </div>
+
+
+                <div class="order-info-item">
+
+                    <div class="order-info-label">
+                        创建时间
+                    </div>
+
+                    <div
+                        class="order-info-value"
+                        id="createdAt">
+
+                        -
+
+                    </div>
+
+                </div>
+
+
+                <div class="order-info-item">
+
+                    <div class="order-info-label">
+                        更新时间
+                    </div>
+
+                    <div
+                        class="order-info-value"
+                        id="updatedAt">
+
+                        -
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- =====================
+             产品明细
+        ====================== -->
+
+        <div class="dashboard-card mb-4">
+
+            <div class="card-header">
+
+                <div>
+
+                    <div class="card-title">
+                        产品明细
+                    </div>
+
+                    <div class="card-subtitle">
+                        当前订单包含的产品
+                    </div>
+
+                </div>
+
+
+                <div>
+
+                    <span
+                        class="badge bg-light text-dark"
+                        id="itemCount">
+
+                        0 项
+
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <div class="table-responsive">
+
+                <table
+                    class="table dashboard-table order-items-table">
+
+                    <thead>
+
+                    <tr>
+
+                        <th style="width:60px;">
+                            行
+                        </th>
+
+                        <th>
+                            产品
+                        </th>
+
+                        <th>
+                            描述
+                        </th>
+
+                        <th>
+                            规格
+                        </th>
+
+                        <th>
+                            数量
+                        </th>
+
+                        <th>
+                            单位
+                        </th>
+
+                        <th>
+                            包装
+                        </th>
+
+                        <th>
+                            实际数量
+                        </th>
+
+                        <th>
+                            客户原始数量
+                        </th>
+
+                    </tr>
+
+                    </thead>
+
+                    <tbody id="orderItems">
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </div>
+
+
+        <!-- =====================
+             原始订单图片
+        ====================== -->
+
+        <div
+            class="dashboard-card mb-4"
+            id="sourceImageCard"
+            style="display:none;">
+
+            <div class="card-header">
+
+                <div>
+
+                    <div class="card-title">
+                        原始订单
+                    </div>
+
+                    <div class="card-subtitle">
+                        AI识别使用的原始订单图片
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="source-image-container">
+
+                <img
+                    id="sourceImage"
+                    src=""
+                    alt="原始订单图片"
+                    class="source-image"
+                    onclick="openSourceImage()">
+
+            </div>
+
+        </div>
+
+
+        <!-- =====================
+             底部操作
+        ====================== -->
+
+        <div class="order-bottom-actions">
+
+            <button
+                type="button"
+                class="btn btn-outline-danger"
+                onclick="deleteCurrentOrder()">
+
+                删除订单
+
+            </button>
+
+
+            <div class="d-flex gap-2">
+
+                <a
+                    href="/orders"
+                    class="btn btn-outline-secondary">
+
+                    返回列表
+
+                </a>
+
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    onclick="editOrder()">
+
+                    编辑订单
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =========================
+     图片预览 Modal
+========================== -->
+
+<div
+    class="modal fade"
+    id="imageModal"
+    tabindex="-1">
+
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+
+        <div class="modal-content">
+
+            <div class="modal-header">
+
+                <h5 class="modal-title">
+                    原始订单图片
+                </h5>
+
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="modal">
+                </button>
+
+            </div>
+
+            <div class="modal-body text-center">
+
+                <img
+                    id="previewImage"
+                    src=""
+                    class="img-fluid"
+                    alt="订单图片">
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<style>
+
+.order-detail-page {
+    max-width: 1500px;
+    margin: 0 auto;
+}
+
+
+/* =========================
+   Loading
+========================= */
+
+.order-loading {
+    padding: 80px 20px;
+
+    text-align: center;
+
+    color: #6b7280;
+
+    font-size: 13px;
+}
+
+
+/* =========================
+   Order Info
+========================= */
+
+.order-info-grid {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(3, 1fr);
+
+    gap: 0;
+
+}
+
+
+.order-info-item {
+
+    padding: 18px 22px;
+
+    border-right:
+        1px solid #f0f0f0;
+
+    border-bottom:
+        1px solid #f0f0f0;
+}
+
+
+.order-info-label {
+
+    color: #9ca3af;
+
+    font-size: 11px;
+
+    margin-bottom: 6px;
+}
+
+
+.order-info-value {
+
+    color: #1f2937;
+
+    font-size: 14px;
+
+    font-weight: 500;
+
+    min-height: 20px;
+
+}
+
+
+/* =========================
+   Table
+========================= */
+
+.order-items-table {
+
+    min-width: 1050px;
+
+}
+
+
+.order-items-table th {
+
+    white-space: nowrap;
+
+}
+
+
+.order-items-table td {
+
+    white-space: nowrap;
+
+}
+
+
+.product-name {
+
+    font-weight: 600;
+
+    color: #1f2937;
+
+}
+
+
+.quantity-value {
+
+    font-weight: 600;
+
+}
+
+
+.actual-quantity {
+
+    color: #16a34a;
+
+    font-weight: 600;
+
+}
+
+
+/* =========================
+   Source Image
+========================= */
+
+.source-image-container {
+
+    padding: 25px;
+
+    text-align: center;
+
+    background: #fafafa;
+
+}
+
+
+.source-image {
+
+    max-width: 100%;
+
+    max-height: 700px;
+
+    border-radius: 6px;
+
+    border:
+        1px solid #e5e7eb;
+
+    cursor: zoom-in;
+
+}
+
+
+/* =========================
+   Bottom Actions
+========================= */
+
+.order-bottom-actions {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    margin-top: 20px;
+
+    padding-bottom: 20px;
+
+}
+
+
+/* =========================
+   Responsive
+========================= */
+
+@media (max-width: 1000px) {
+
+    .order-info-grid {
+
+        grid-template-columns:
+            repeat(2, 1fr);
+
+    }
+
+}
+
+
+@media (max-width: 600px) {
+
+    .order-info-grid {
+
+        grid-template-columns: 1fr;
+
+    }
+
+    .order-bottom-actions {
+
+        display: block;
+
+    }
+
+    .order-bottom-actions > div {
+
+        margin-top: 10px;
+
+    }
+
+}
+
+</style>
+
+
+<script>
+
+const orderID = "{{ .id }}";
+
+let currentOrder = null;
+
+
+/* =========================
+   页面初始化
+========================= */
+
+$(document).ready(function () {
+
+    loadOrder();
+
+});
+
+
+/* =========================
+   加载订单
+========================= */
+
+function loadOrder() {
+
+    $("#orderLoading").show();
+
+    $("#orderError").hide();
+
+    $("#orderContent").hide();
+
+
+    $.ajax({
+
+        url: "/api/orders/" + orderID,
+
+        type: "GET",
+
+        success: function (res) {
+
+            console.log(
+                "订单详情:",
+                res
+            );
+
+
+            if (!res.success) {
+
+                showOrderError(
+                    res.message ||
+                    "订单加载失败"
+                );
+
+                return;
+            }
+
+
+            currentOrder =
+                res.data;
+
+
+            renderOrder(
+                currentOrder
+            );
+
+        },
+
+
+        error: function (xhr) {
+
+            console.error(xhr);
+
+
+            let message =
+                "订单加载失败";
+
+
+            if (
+                xhr.responseJSON &&
+                xhr.responseJSON.message
+            ) {
+
+                message +=
+                    "：" +
+                    xhr.responseJSON.message;
+
+            }
+
+
+            showOrderError(
+                message
+            );
+
+        },
+
+
+        complete: function () {
+
+            $("#orderLoading").hide();
+
+        }
+
+    });
+
+}
+
+
+/* =========================
+   加载失败
+========================= */
+
+function showOrderError(message) {
+
+    $("#orderContent").hide();
+
+    $("#orderError")
+        .text(message)
+        .show();
+
+}
+
+
+/* =========================
+   渲染订单
+========================= */
+
+function renderOrder(order) {
+
+    /*
+     * 页面标题
+     */
+
+    $("#pageSubtitle").text(
+        "订单 " +
+        (order.order_number || "-")
+    );
+
+
+    /*
+     * 基本信息
+     */
+
+    $("#orderNumber").text(
+        order.order_number || "-"
+    );
+
+
+    $("#customer").text(
+        order.customer || "-"
+    );
+
+
+    $("#country").text(
+        order.country || "-"
+    );
+
+
+    $("#shippingMethod").text(
+        order.shipping_method || "-"
+    );
+
+
+    $("#createdAt").text(
+        formatDate(order.created_at)
+    );
+
+
+    $("#updatedAt").text(
+        formatDate(order.updated_at)
+    );
+
+
+    /*
+     * 状态
+     */
+
+    $("#orderStatus").html(
+        getStatusBadge(
+            order.status
+        )
+    );
+
+
+    /*
+     * 产品明细
+     */
+
+    renderItems(
+        order.items || []
+    );
+
+
+    /*
+     * 原始图片
+     */
+
+    renderSourceImage(
+        order.source_image
+    );
+
+
+    $("#orderContent").show();
+
+}
+
+
+/* =========================
+   产品明细
+========================= */
+
+function renderItems(items) {
+
+    const tbody =
+        $("#orderItems");
+
+
+    tbody.empty();
+
+
+    $("#itemCount").text(
+        items.length + " 项"
+    );
+
+
+    if (items.length === 0) {
+
+        tbody.html(`
+
+            <tr>
+
+                <td
+                    colspan="9"
+                    class="text-center text-muted py-5">
+
+                    此订单没有产品明细
+
+                </td>
+
+            </tr>
+
+        `);
+
+        return;
+    }
+
+
+    items.forEach(function (item, index) {
+
+        const lineNumber =
+            item.line_number ||
+            index + 1;
+
+
+        tbody.append(`
+
+            <tr>
+
+                <td>
+                    ${lineNumber}
+                </td>
+
+
+                <td>
+
+                    <div class="product-name">
+
+                        ${escapeHtml(
+                            item.product_name || "-"
+                        )}
+
+                    </div>
+
+                </td>
+
+
+                <td>
+
+                    ${escapeHtml(
+                        item.description || "-"
+                    )}
+
+                </td>
+
+
+                <td>
+
+                    ${escapeHtml(
+                        item.specification || "-"
+                    )}
+
+                </td>
+
+
+                <td>
+
+                    <span class="quantity-value">
+
+                        ${formatNumber(
+                            item.quantity
+                        )}
+
+                    </span>
+
+                </td>
+
+
+                <td>
+
+                    ${escapeHtml(
+                        item.unit || "-"
+                    )}
+
+                </td>
+
+
+                <td>
+
+                    ${formatNumber(
+                        item.pack_size
+                    )}
+
+                </td>
+
+
+                <td>
+
+                    <span class="actual-quantity">
+
+                        ${formatNumber(
+                            item.actual_quantity
+                        )}
+
+                    </span>
+
+                </td>
+
+
+                <td>
+
+                    ${escapeHtml(
+                        item.declared_quantity || "-"
+                    )}
+
+                </td>
+
+            </tr>
+
+        `);
+
+    });
+
+}
+
+
+/* =========================
+   原始图片
+========================= */
+
+function renderSourceImage(
+    sourceImage
+) {
+
+    if (!sourceImage) {
+
+        $("#sourceImageCard")
+            .hide();
+
+        return;
+    }
+
+
+    let imageURL =
+        sourceImage;
+
+
+    /*
+     * 如果数据库保存的是文件名
+     */
+
+    if (
+        !imageURL.startsWith("/") &&
+        !imageURL.startsWith("http://") &&
+        !imageURL.startsWith("https://")
+    ) {
+
+        imageURL =
+            "/uploads/" +
+            imageURL;
+
+    }
+
+
+    $("#sourceImage")
+        .attr("src", imageURL);
+
+
+    $("#sourceImageCard")
+        .show();
+
+}
+
+
+/* =========================
+   打开大图
+========================= */
+
+function openSourceImage() {
+
+    const src =
+        $("#sourceImage").attr("src");
+
+
+    if (!src) {
+        return;
+    }
+
+
+    $("#previewImage")
+        .attr("src", src);
+
+
+    const modal =
+        new bootstrap.Modal(
+            document.getElementById(
+                "imageModal"
+            )
+        );
+
+
+    modal.show();
+
+}
+
+
+/* =========================
+   编辑订单
+========================= */
+
+function editOrder() {
+
+    if (!currentOrder) {
+        alert("订单尚未加载完成");
+        return;
+    }
+
+    window.location.href = "/orders/" + currentOrder.id + "/edit";
+
+}
+
+
+/* =========================
+   删除当前订单
+========================= */
+
+function deleteCurrentOrder() {
+
+    if (!currentOrder) {
+        return;
+    }
+
+
+    const orderNumber =
+        currentOrder.order_number ||
+        currentOrder.id;
+
+
+    const ok = confirm(
+
+        "确定要删除订单「" +
+        orderNumber +
+        "」吗？\n\n" +
+
+        "订单明细也会一起删除，" +
+        "此操作不可恢复。"
+
+    );
+
+
+    if (!ok) {
+        return;
+    }
+
+
+    $.ajax({
+
+        url:
+            "/api/orders/" +
+            currentOrder.id,
+
+        type: "DELETE",
+
+        success: function (res) {
+
+            if (!res.success) {
+
+                alert(
+                    res.message ||
+                    "删除失败"
+                );
+
+                return;
+            }
+
+
+            alert(
+                "订单删除成功"
+            );
+
+
+            window.location.href =
+                "/orders";
+
+        },
+
+
+        error: function (xhr) {
+
+            let message =
+                "订单删除失败";
+
+
+            if (
+                xhr.responseJSON &&
+                xhr.responseJSON.message
+            ) {
+
+                message +=
+                    "：" +
+                    xhr.responseJSON.message;
+
+            }
+
+
+            alert(message);
+
+        }
+
+    });
+
+}
+
+
+/* =========================
+   状态
+========================= */
+
+function getStatusBadge(status) {
+
+    let text =
+        status || "未知";
+
+    let cls =
+        "bg-secondary";
+
+
+    switch (status) {
+
+        case "draft":
+
+            text = "草稿";
+            cls = "bg-secondary";
+
+            break;
+
+
+        case "confirmed":
+
+            text = "已确认";
+            cls = "bg-primary";
+
+            break;
+
+
+        case "purchasing":
+
+            text = "采购中";
+            cls = "bg-warning text-dark";
+
+            break;
+
+
+        case "producing":
+
+            text = "生产中";
+            cls = "bg-info text-dark";
+
+            break;
+
+
+        case "packing":
+
+            text = "包装中";
+            cls = "bg-info text-dark";
+
+            break;
+
+
+        case "purchased":
+
+            text = "已采购";
+            cls = "bg-primary";
+
+            break;
+
+
+        case "produced":
+
+            text = "已生产";
+            cls = "bg-info text-dark";
+
+            break;
+
+
+        case "shipped":
+
+            text = "已发货";
+            cls = "bg-info text-dark";
+
+            break;
+
+
+        case "paid":
+
+            text = "已收款";
+            cls = "bg-success";
+
+            break;
+
+
+        case "completed":
+
+            text = "完结";
+            cls = "bg-success";
+
+            break;
+
+
+        case "cancelled":
+
+            text = "已取消";
+            cls = "bg-danger";
+
+            break;
+
+    }
+
+
+    return `
+
+        <span
+            class="badge ${cls}"
+            style="min-width:70px;">
+
+            ${text}
+
+        </span>
+
+    `;
+
+}
+
+
+/* =========================
+   日期
+========================= */
+
+function formatDate(value) {
+
+    if (!value) {
+        return "-";
+    }
+
+
+    const date =
+        new Date(value);
+
+
+    if (isNaN(date.getTime())) {
+        return value;
+    }
+
+
+    const pad =
+        n => String(n).padStart(2, "0");
+
+
+    return (
+
+        date.getFullYear() +
+        "-" +
+        pad(date.getMonth() + 1) +
+        "-" +
+        pad(date.getDate()) +
+        " " +
+        pad(date.getHours()) +
+        ":" +
+        pad(date.getMinutes()) +
+        ":" +
+        pad(date.getSeconds())
+
+    );
+
+}
+
+
+/* =========================
+   数字
+========================= */
+
+function formatNumber(value) {
+
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+
+        return "-";
+
+    }
+
+
+    const number =
+        Number(value);
+
+
+    if (isNaN(number)) {
+        return value;
+    }
+
+
+    if (
+        Number.isInteger(number)
+    ) {
+
+        return number.toString();
+
+    }
+
+
+    return number.toFixed(3)
+        .replace(/\.?0+$/, "");
+
+}
+
+
+/* =========================
+   HTML安全
+========================= */
+
+function escapeHtml(value) {
+
+    return String(value ?? "")
+
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+
+        .replace(
+            /</g,
+            "&lt;"
+        )
+
+        .replace(
+            />/g,
+            "&gt;"
+        )
+
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+
+}
+
+</script>
+
+{{end}}

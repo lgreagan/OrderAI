@@ -1,0 +1,331 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">材料管理</h4>
+            <div class="text-secondary small">维护包材（箱子/标签）与原材料，PI 的箱费取自这里的单价</div>
+        </div>
+        <button class="btn btn-primary" id="addMaterialBtn">+ 新增材料</button>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-5">
+                    <input id="keyword" class="form-control"
+                           placeholder="搜索材料编码、中英文名、简称、供应商">
+                </div>
+                <div class="col-lg-3">
+                    <select id="categoryFilter" class="form-select">
+                        <option value="">全部分类</option>
+                        <option value="packaging">包材</option>
+                        <option value="material">原材料</option>
+                    </select>
+                </div>
+                <div class="col-lg-4 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>编码</th>
+                            <th>分类</th>
+                            <th>中文名</th>
+                            <th>英文名</th>
+                            <th>简称（PI 用）</th>
+                            <th>规格</th>
+                            <th>单位</th>
+                            <th>单价</th>
+                            <th>供应商</th>
+                            <th>安全库存</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="materialTableBody">
+                        <tr><td colspan="12" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="materialCount"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="materialModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="materialForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="materialModalTitle">新增材料</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="materialId">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">材料编码 *</label>
+                            <input class="form-control" id="code" required maxlength="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">中文名</label>
+                            <input class="form-control" id="nameZh" maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">英文名</label>
+                            <input class="form-control" id="name" maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">简称（PI 用）</label>
+                            <input class="form-control" id="shortName" maxlength="100"
+                                   placeholder="如 V1 7cm box">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">分类 *</label>
+                            <select class="form-select" id="category">
+                                <option value="packaging">包材</option>
+                                <option value="material">原材料</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">规格</label>
+                            <input class="form-control" id="spec" maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">单位</label>
+                            <input class="form-control" id="unit" maxlength="30" value="pcs">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">单价</label>
+                            <input type="number" class="form-control" id="price" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">货币</label>
+                            <select class="form-select" id="currency">
+                                <option value="CNY">CNY 人民币</option>
+                                <option value="USD">USD 美元</option>
+                                <option value="EUR">EUR 欧元</option>
+                                <option value="GBP">GBP 英镑</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">供应商</label>
+                            <input class="form-control" id="supplierName" maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">安全库存</label>
+                            <input type="number" class="form-control" id="safetyStock" min="0" step="0.001" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" id="materialStatus">
+                                <option value="active">启用</option>
+                                <option value="inactive">停用</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">备注</label>
+                            <textarea class="form-control" id="remark" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="saveMaterialBtn">保存材料</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const api = '/api/materials';
+        const modal = new bootstrap.Modal(document.getElementById('materialModal'));
+        let materials = [];
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function num(id) { return Number($('#' + id).val()) || 0; }
+
+        const categoryLabel = c => c === 'material' ? '原材料' : '包材';
+
+        function render() {
+            const tbody = $('#materialTableBody');
+            tbody.empty();
+
+            if (!materials.length) {
+                tbody.html('<tr><td colspan="12" class="text-center text-secondary py-4">暂无材料数据</td></tr>');
+                $('#materialCount').text('共 0 条材料');
+                return;
+            }
+
+            materials.forEach(m => {
+                const status = m.status === 'active'
+                    ? '<span class="badge text-bg-success">启用</span>'
+                    : '<span class="badge text-bg-secondary">停用</span>';
+
+                tbody.append(`
+                    <tr>
+                        <td class="fw-semibold">${esc(m.code)}</td>
+                        <td>${categoryLabel(m.category)}</td>
+                        <td>${esc(m.name_zh)}</td>
+                        <td>${esc(m.name)}</td>
+                        <td>${esc(m.short_name)}</td>
+                        <td>${esc(m.spec)}</td>
+                        <td>${esc(m.unit)}</td>
+                        <td>${esc(m.currency)} ${Number(m.price || 0).toFixed(2)}</td>
+                        <td>${esc(m.supplier_name)}</td>
+                        <td>${esc(m.safety_stock)}</td>
+                        <td>${status}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary edit-material" data-id="${m.id}">编辑</button>
+                            <button class="btn btn-sm btn-outline-danger delete-material" data-id="${m.id}">删除</button>
+                        </td>
+                    </tr>
+                `);
+            });
+
+            $('#materialCount').text(`共 ${materials.length} 条材料`);
+        }
+
+        async function loadMaterials() {
+            $('#materialTableBody').html('<tr><td colspan="12" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON(api, {
+                    keyword: $('#keyword').val().trim(),
+                    category: $('#categoryFilter').val()
+                });
+                if (!result.success) throw new Error(result.message || '读取材料失败');
+                materials = result.data || [];
+                render();
+            } catch (err) {
+                $('#materialTableBody').html(
+                    `<tr><td colspan="12" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        function resetForm() {
+            $('#materialForm')[0].reset();
+            $('#materialId').val('');
+            $('#category').val('packaging');
+            $('#unit').val('pcs');
+            $('#price').val('0');
+            $('#safetyStock').val('0');
+            $('#currency').val('CNY');
+            $('#materialStatus').val('active');
+        }
+
+        function fillForm(m) {
+            $('#materialId').val(m.id);
+            $('#code').val(m.code);
+            $('#name').val(m.name);
+            $('#nameZh').val(m.name_zh);
+            $('#shortName').val(m.short_name);
+            $('#category').val(m.category || 'packaging');
+            $('#spec').val(m.spec);
+            $('#unit').val(m.unit || 'pcs');
+            $('#price').val(m.price || 0);
+            $('#currency').val(m.currency || 'CNY');
+            $('#supplierName').val(m.supplier_name);
+            $('#safetyStock').val(m.safety_stock || 0);
+            $('#materialStatus').val(m.status || 'active');
+            $('#remark').val(m.remark || '');
+        }
+
+        $('#addMaterialBtn').on('click', function () {
+            resetForm();
+            $('#materialModalTitle').text('新增材料');
+            modal.show();
+        });
+
+        $('#searchBtn,#refreshBtn').on('click', loadMaterials);
+        $('#categoryFilter').on('change', loadMaterials);
+        $('#keyword').on('keydown', e => { if (e.key === 'Enter') loadMaterials(); });
+
+        $('#materialTableBody').on('click', '.edit-material', async function () {
+            const id = Number($(this).data('id'));
+            try {
+                const result = await $.getJSON(`${api}/${id}`);
+                if (!result.success) throw new Error(result.message || '读取失败');
+                resetForm();
+                fillForm(result.data);
+                $('#materialModalTitle').text('编辑材料');
+                modal.show();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '读取材料失败');
+            }
+        });
+
+        $('#materialTableBody').on('click', '.delete-material', async function () {
+            const id = Number($(this).data('id'));
+            const m = materials.find(x => Number(x.id) === id);
+            if (!m) return;
+            if (!confirm(`确定删除材料「${m.code} / ${m.name_zh || m.name}」吗？`)) return;
+            try {
+                const result = await $.ajax({ url: `${api}/${id}`, method: 'DELETE', dataType: 'json' });
+                if (!result.success) throw new Error(result.message || '删除失败');
+                await loadMaterials();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '删除失败');
+            }
+        });
+
+        $('#materialForm').on('submit', async function (e) {
+            e.preventDefault();
+            const id = $('#materialId').val();
+            const payload = {
+                code: $('#code').val().trim(),
+                name: $('#name').val().trim(),
+                name_zh: $('#nameZh').val().trim(),
+                short_name: $('#shortName').val().trim(),
+                category: $('#category').val(),
+                spec: $('#spec').val().trim(),
+                unit: $('#unit').val().trim(),
+                price: num('price'),
+                currency: $('#currency').val(),
+                supplier_name: $('#supplierName').val().trim(),
+                safety_stock: num('safetyStock'),
+                status: $('#materialStatus').val(),
+                remark: $('#remark').val().trim()
+            };
+
+            if (!payload.code) { alert('请填写材料编码'); return; }
+            if (!payload.name && !payload.name_zh) { alert('请填写材料名称'); return; }
+
+            $('#saveMaterialBtn').prop('disabled', true).text('正在保存...');
+            try {
+                const result = await $.ajax({
+                    url: id ? `${api}/${id}` : api,
+                    method: id ? 'PUT' : 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                modal.hide();
+                await loadMaterials();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '保存材料失败');
+            } finally {
+                $('#saveMaterialBtn').prop('disabled', false).text('保存材料');
+            }
+        });
+
+        loadMaterials();
+    });
+</script>
+{{end}}

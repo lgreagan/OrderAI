@@ -1,0 +1,295 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">报关品类</h4>
+            <div class="text-secondary small">
+                出口报关资料按「品类」出行：品名、材质、海关编码、用途等申报要素在这里维护，SKU 挂到品类后即可一键生成报关资料
+            </div>
+        </div>
+        <button class="btn btn-primary" id="addCategoryBtn">+ 新增品类</button>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-5">
+                    <input id="keyword" class="form-control" placeholder="搜索品类编码、中英文品名、海关编码">
+                </div>
+                <div class="col-lg-3">
+                    <select id="statusFilter" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="active">启用</option>
+                        <option value="inactive">停用</option>
+                    </select>
+                </div>
+                <div class="col-lg-4 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>品类编码</th>
+                            <th>英文品名</th>
+                            <th>中文品名</th>
+                            <th>材质</th>
+                            <th>海关编码</th>
+                            <th>用途</th>
+                            <th>品牌</th>
+                            <th>型号</th>
+                            <th>申报单价</th>
+                            <th>SKU 数</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="categoryTableBody">
+                        <tr><td colspan="12" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="categoryCount"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="categoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="categoryForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="categoryModalTitle">新增报关品类</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="categoryId">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">品类编码</label>
+                            <input class="form-control" id="code" maxlength="50" placeholder="如 CAT-BALL">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">产品英文品名 *</label>
+                            <input class="form-control" id="nameEn" maxlength="255" required
+                                   placeholder="如 dog treat ball">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">产品中文品名 *</label>
+                            <input class="form-control" id="nameZh" maxlength="255" required
+                                   placeholder="如 宠物球">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">材质</label>
+                            <input class="form-control" id="material" maxlength="100" placeholder="如 硬质橡胶">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">海关编码</label>
+                            <input class="form-control" id="hsCode" maxlength="50" placeholder="如 4017.00.0000">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">用途</label>
+                            <input class="form-control" id="purpose" maxlength="100" placeholder="如 宠物玩耍">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">品牌</label>
+                            <input class="form-control" id="brand" maxlength="100" placeholder="无">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">型号</label>
+                            <input class="form-control" id="model" maxlength="100" placeholder="无">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">默认申报单价</label>
+                            <input type="number" class="form-control" id="declarePrice" min="0" step="0.0001" value="0">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">产品链接</label>
+                            <input class="form-control" id="productUrl" maxlength="500"
+                                   placeholder="如 https://www.amazon.de/gp/product/B0GQH6W3T3">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">默认图片</label>
+                            <input class="form-control" id="image" maxlength="500"
+                                   placeholder="/uploads/sku_xxx.png（留空则按 SKU 图片，无图写「无」）">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" id="categoryStatus">
+                                <option value="active">启用</option>
+                                <option value="inactive">停用</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">备注</label>
+                            <textarea class="form-control" id="remark" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="saveCategoryBtn">保存品类</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const api = '/api/product-categories';
+        const modal = new bootstrap.Modal(document.getElementById('categoryModal'));
+        let categories = [];
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function num(id) { return Number($('#' + id).val()) || 0; }
+
+        function load() {
+            $.get(api, {
+                keyword: $('#keyword').val(),
+                status: $('#statusFilter').val()
+            }).done(res => {
+                categories = (res && res.data) || [];
+                render();
+            }).fail(xhr => {
+                alert((xhr.responseJSON && xhr.responseJSON.message) || '加载报关品类失败');
+            });
+        }
+
+        function render() {
+            const tbody = $('#categoryTableBody');
+            tbody.empty();
+
+            if (!categories.length) {
+                tbody.html('<tr><td colspan="12" class="text-center text-secondary py-4">暂无报关品类，先新增一个吧</td></tr>');
+                $('#categoryCount').text('共 0 个品类');
+                return;
+            }
+
+            categories.forEach(c => {
+                const status = c.status === 'active'
+                    ? '<span class="badge text-bg-success">启用</span>'
+                    : '<span class="badge text-bg-secondary">停用</span>';
+                tbody.append(`
+                    <tr>
+                        <td class="fw-semibold">${esc(c.code)}</td>
+                        <td>${esc(c.name_en)}</td>
+                        <td>${esc(c.name_zh)}</td>
+                        <td>${esc(c.material)}</td>
+                        <td>${esc(c.hs_code)}</td>
+                        <td>${esc(c.purpose)}</td>
+                        <td>${esc(c.brand)}</td>
+                        <td>${esc(c.model)}</td>
+                        <td>${Number(c.declare_price || 0).toFixed(4)}</td>
+                        <td>${Number(c.sku_count || 0)}</td>
+                        <td>${status}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary edit-category" data-id="${c.id}">编辑</button>
+                            <button class="btn btn-sm btn-outline-danger delete-category" data-id="${c.id}">删除</button>
+                        </td>
+                    </tr>
+                `);
+            });
+            $('#categoryCount').text(`共 ${categories.length} 个品类`);
+        }
+
+        function openCreate() {
+            $('#categoryForm')[0].reset();
+            $('#categoryId').val('');
+            $('#declarePrice').val(0);
+            $('#categoryStatus').val('active');
+            $('#categoryModalTitle').text('新增报关品类');
+            modal.show();
+        }
+
+        function openEdit(id) {
+            const c = categories.find(x => Number(x.id) === Number(id));
+            if (!c) return;
+            $('#categoryId').val(c.id);
+            $('#code').val(c.code || '');
+            $('#nameEn').val(c.name_en || '');
+            $('#nameZh').val(c.name_zh || '');
+            $('#material').val(c.material || '');
+            $('#hsCode').val(c.hs_code || '');
+            $('#purpose').val(c.purpose || '');
+            $('#brand').val(c.brand || '');
+            $('#model').val(c.model || '');
+            $('#declarePrice').val(Number(c.declare_price || 0));
+            $('#productUrl').val(c.product_url || '');
+            $('#image').val(c.image || '');
+            $('#remark').val(c.remark || '');
+            $('#categoryStatus').val(c.status || 'active');
+            $('#categoryModalTitle').text('编辑报关品类');
+            modal.show();
+        }
+
+        function payload() {
+            return {
+                code: $('#code').val(),
+                name_en: $('#nameEn').val(),
+                name_zh: $('#nameZh').val(),
+                material: $('#material').val(),
+                hs_code: $('#hsCode').val(),
+                purpose: $('#purpose').val(),
+                brand: $('#brand').val(),
+                model: $('#model').val(),
+                declare_price: num('declarePrice'),
+                product_url: $('#productUrl').val(),
+                image: $('#image').val(),
+                remark: $('#remark').val(),
+                status: $('#categoryStatus').val()
+            };
+        }
+
+        $('#addCategoryBtn').on('click', openCreate);
+        $('#searchBtn').on('click', load);
+        $('#refreshBtn').on('click', function () {
+            $('#keyword').val('');
+            $('#statusFilter').val('');
+            load();
+        });
+
+        $('#keyword').on('keydown', e => { if (e.key === 'Enter') load(); });
+
+        $('#categoryTableBody')
+            .on('click', '.edit-category', function () { openEdit($(this).data('id')); })
+            .on('click', '.delete-category', function () {
+                const id = $(this).data('id');
+                if (!confirm('确定删除该报关品类？')) return;
+                $.ajax({ url: api + '/' + id, type: 'DELETE' })
+                    .done(() => load())
+                    .fail(xhr => alert((xhr.responseJSON && xhr.responseJSON.message) || '删除失败'));
+            });
+
+        $('#categoryForm').on('submit', function (e) {
+            e.preventDefault();
+            const id = $('#categoryId').val();
+            const body = JSON.stringify(payload());
+            const req = id
+                ? $.ajax({ url: api + '/' + id, type: 'PUT', contentType: 'application/json', data: body })
+                : $.ajax({ url: api, type: 'POST', contentType: 'application/json', data: body });
+
+            req.done(() => {
+                modal.hide();
+                load();
+            }).fail(xhr => {
+                alert((xhr.responseJSON && xhr.responseJSON.message) || '保存失败');
+            });
+        });
+
+        load();
+    });
+</script>
+{{end}}

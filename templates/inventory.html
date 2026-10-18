@@ -1,0 +1,608 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">库存管理</h4>
+            <div class="text-secondary small">入库来自采购单到货或手工录入，出库走「领料出库」，结存由流水自动汇总</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" id="inBtn">+ 入库</button>
+            <a class="btn btn-outline-primary" href="/material-issues">领料出库</a>
+            <button class="btn btn-outline-primary" id="issueRecordsBtn">领料记录</button>
+            <button class="btn btn-outline-secondary" id="adjustBtn">盘点调整</button>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="stockTab" data-bs-toggle="tab"
+                    data-bs-target="#stockPane" type="button">库存结存</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="txnTab" data-bs-toggle="tab"
+                    data-bs-target="#txnPane" type="button">库存流水</button>
+        </li>
+    </ul>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-5">
+                    <input id="keyword" class="form-control" placeholder="搜索物品编码、名称、简称">
+                </div>
+                <div class="col-lg-3">
+                    <select id="itemTypeFilter" class="form-select">
+                        <option value="">全部物品</option>
+                        <option value="sku">产品</option>
+                        <option value="material">材料</option>
+                    </select>
+                </div>
+                <div class="col-lg-4 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="stockPane">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>物品类型</th>
+                                    <th>编码</th>
+                                    <th>名称</th>
+                                    <th>仓库</th>
+                                    <th class="text-end">结存数量</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stockBody">
+                                <tr><td colspan="5" class="text-center text-secondary py-4">正在加载...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="small text-secondary" id="stockSummary"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="txnPane">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                        <div class="btn-group btn-group-sm" role="group" id="txnFilter">
+                            <button type="button" class="btn btn-outline-secondary active" data-biz="">全部流水</button>
+                            <button type="button" class="btn btn-outline-secondary" data-biz="purchase_in">采购入库</button>
+                            <button type="button" class="btn btn-outline-secondary" data-biz="manual_in">手工入库</button>
+                            <button type="button" class="btn btn-outline-secondary" data-biz="requisition">领料出库</button>
+                            <button type="button" class="btn btn-outline-secondary" data-biz="shipment_pack_out">发货核销包材</button>
+                        </div>
+                        <span class="small text-secondary" id="txnFilterHint"></span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>时间</th>
+                                    <th>物品</th>
+                                    <th>方向</th>
+                                    <th class="text-end">数量</th>
+                                    <th>业务类型</th>
+                                    <th>关联单据</th>
+                                    <th>备注</th>
+                                </tr>
+                            </thead>
+                            <tbody id="txnBody">
+                                <tr><td colspan="7" class="text-center text-secondary py-4">正在加载...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 入库登记 -->
+<div class="modal fade" id="inModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">入库登记</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-pills mb-3" id="inSourceNav">
+                    <li class="nav-item">
+                        <button class="nav-link active" type="button" data-source="manual">手工录入</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" type="button" data-source="purchase">采购单到货</button>
+                    </li>
+                </ul>
+
+                <div id="inManualPane">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">物品类型 *</label>
+                            <select class="form-select" id="inItemType">
+                                <option value="material">材料</option>
+                                <option value="sku">产品</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">物品 *</label>
+                            <select class="form-select" id="inItemId"></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">入库数量 *</label>
+                            <input type="number" class="form-control" id="inQuantity" min="0.001" step="0.001" value="1">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">单位成本</label>
+                            <input type="number" class="form-control" id="inUnitCost" min="0" step="0.0001" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">仓库</label>
+                            <input class="form-control" id="inWarehouse" value="default" maxlength="50">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">备注</label>
+                            <input class="form-control" id="inRemark" maxlength="500">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="inPurchasePane" class="d-none">
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-8">
+                            <label class="form-label">采购单（未到货 / 部分到货）</label>
+                            <select class="form-select" id="inPurchaseOrder"></select>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" class="btn btn-outline-primary w-100" id="loadPoItemsBtn">载入明细</button>
+                        </div>
+                    </div>
+                    <div class="small text-secondary mb-2">填写本次累计已入库数量，保存后自动写入库存流水。</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>物品</th>
+                                    <th class="text-end">采购量</th>
+                                    <th class="text-end">已入库</th>
+                                    <th style="width:150px" class="text-end">本次累计入库</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inPoBody">
+                                <tr><td colspan="4" class="text-center text-secondary py-3">请选择采购单并载入明细</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveInBtn">保存入库</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 盘点调整 -->
+<div class="modal fade" id="adjustModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="adjustForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">库存盘点调整</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="small text-secondary mb-3">用于盘点纠偏：按方向手工增减库存，写入 adjust 流水。</div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">物品类型 *</label>
+                            <select class="form-select" id="adjItemType">
+                                <option value="material">材料</option>
+                                <option value="sku">产品</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">物品 *</label>
+                            <select class="form-select" id="adjItemId"></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">方向 *</label>
+                            <select class="form-select" id="adjDirection">
+                                <option value="1">入库 (+)</option>
+                                <option value="-1">出库 (-)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">数量 *</label>
+                            <input type="number" class="form-control" id="adjQuantity" min="0.001" step="0.001" value="1">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">仓库</label>
+                            <input class="form-control" id="adjWarehouse" value="default" maxlength="50">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">单位成本</label>
+                            <input type="number" class="form-control" id="adjUnitCost" min="0" step="0.0001" value="0">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">备注</label>
+                            <input class="form-control" id="adjRemark" maxlength="500">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="saveAdjustBtn">保存调整</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const inModal = new bootstrap.Modal(document.getElementById('inModal'));
+        const adjustModal = new bootstrap.Modal(document.getElementById('adjustModal'));
+        let skuOptions = [];
+        let materialOptions = [];
+        let purchaseOrders = [];
+        let inSource = 'manual';
+        let currentPo = null;
+        let txnBizType = '';
+
+        const bizLabels = {
+            purchase_in: '采购入库',
+            production_in: '生产入库',
+            shipment_out: '发货出库',
+            consumption: '材料消耗',
+            adjust: '盘点调整',
+            manual_in: '手工入库',
+            requisition: '领料出库',
+            shipment_pack_out: '发货核销包材'
+        };
+        const refLabels = {
+            purchase_order: '采购单',
+            production_order: '生产单',
+            shipment: '发货单',
+            manual: '手工'
+        };
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function num(value) {
+            return Number(value).toFixed(3).replace(/\.?0+$/, '');
+        }
+
+        const itemLabel = t => t === 'material' ? '材料' : '产品';
+        const bizLabel = t => bizLabels[t] || t || '';
+        const refLabel = t => refLabels[t] || t || '';
+
+        // 流水业务类型筛选（'' = 全部）。
+        function setTxnFilter(biz) {
+            txnBizType = biz || '';
+            $('#txnFilter button').removeClass('active');
+            $(`#txnFilter button[data-biz="${txnBizType}"]`).addClass('active');
+            $('#txnFilterHint').text(txnBizType ? '仅显示：' + bizLabel(txnBizType) : '');
+        }
+
+        async function loadStock() {
+            $('#stockBody').html('<tr><td colspan="5" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON('/api/inventory/stock', {
+                    item_type: $('#itemTypeFilter').val(),
+                    keyword: $('#keyword').val().trim()
+                });
+                if (!result.success) throw new Error(result.message || '读取库存失败');
+                const rows = result.data || [];
+                if (!rows.length) {
+                    $('#stockBody').html('<tr><td colspan="5" class="text-center text-secondary py-4">暂无库存数据</td></tr>');
+                    $('#stockSummary').text('');
+                    return;
+                }
+                $('#stockBody').html(rows.map(r => `
+                    <tr>
+                        <td>${itemLabel(r.item_type)}</td>
+                        <td class="fw-semibold">${esc(r.item_code)}</td>
+                        <td>${esc(r.item_name)}</td>
+                        <td>${esc(r.warehouse)}</td>
+                        <td class="text-end ${Number(r.stock_quantity) < 0 ? 'text-danger fw-semibold' : 'fw-semibold'}">
+                            ${num(r.stock_quantity)}${r.unit ? ' ' + esc(r.unit) : ''}
+                        </td>
+                    </tr>
+                `).join(''));
+                const negative = rows.filter(r => Number(r.stock_quantity) < 0).length;
+                $('#stockSummary').text(`共 ${rows.length} 条` + (negative ? `，其中负库存 ${negative} 条（红色）` : ''));
+            } catch (err) {
+                $('#stockBody').html(
+                    `<tr><td colspan="5" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadTransactions() {
+            $('#txnBody').html('<tr><td colspan="7" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON('/api/inventory/transactions', {
+                    item_type: $('#itemTypeFilter').val(),
+                    biz_type: txnBizType,
+                    keyword: $('#keyword').val().trim()
+                });
+                if (!result.success) throw new Error(result.message || '读取流水失败');
+                const rows = result.data || [];
+                if (!rows.length) {
+                    const empty = txnBizType ? `暂无「${esc(bizLabel(txnBizType))}」记录` : '暂无流水数据';
+                    $('#txnBody').html(`<tr><td colspan="7" class="text-center text-secondary py-4">${empty}</td></tr>`);
+                    return;
+                }
+                $('#txnBody').html(rows.map(t => {
+                    const dir = t.direction > 0
+                        ? '<span class="badge text-bg-success">入库</span>'
+                        : '<span class="badge text-bg-warning">出库</span>';
+                    const ref = t.ref_type ? `${esc(refLabel(t.ref_type))}${t.ref_id ? '#' + t.ref_id : ''}` : '';
+                    const time = (t.occurred_at || '').replace('T', ' ').slice(0, 19);
+                    return `
+                        <tr>
+                            <td>${esc(time)}</td>
+                            <td><span class="fw-semibold">${esc(t.item_code)}</span> ${esc(t.item_name)}</td>
+                            <td>${dir}</td>
+                            <td class="text-end">${num(t.quantity)}</td>
+                            <td>${esc(bizLabel(t.biz_type))}</td>
+                            <td>${ref}</td>
+                            <td>${esc(t.remark)}</td>
+                        </tr>
+                    `;
+                }).join(''));
+            } catch (err) {
+                $('#txnBody').html(
+                    `<tr><td colspan="7" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadItems() {
+            try {
+                const [skus, mats] = await Promise.all([
+                    $.getJSON('/api/skus', {}),
+                    $.getJSON('/api/materials', {})
+                ]);
+                skuOptions = (skus.data || []).map(s => ({
+                    id: s.id, label: `${s.sku_code} ${s.short_name || s.product_name_zh || ''}`
+                }));
+                materialOptions = (mats.data || []).map(m => ({
+                    id: m.id, label: `${m.code} ${m.short_name || m.name_zh || m.name || ''}`
+                }));
+            } catch (err) { /* 忽略：调整时若取不到列表则提示 */ }
+        }
+
+        async function loadPurchaseOrders() {
+            try {
+                const result = await $.getJSON('/api/purchase-orders', {});
+                purchaseOrders = (result.data || []).filter(p =>
+                    p.status !== 'received' && p.status !== 'cancelled'
+                );
+            } catch (err) { purchaseOrders = []; }
+        }
+
+        function optionsHtml(list) {
+            return list.map(o => `<option value="${o.id}">${esc(o.label)}</option>`).join('');
+        }
+
+        function refreshInItemSelect() {
+            const type = $('#inItemType').val();
+            const list = type === 'sku' ? skuOptions : materialOptions;
+            $('#inItemId').html(list.length
+                ? optionsHtml(list)
+                : '<option value="">（列表为空，请先在对应页面新增）</option>');
+        }
+
+        function refreshAdjItemSelect() {
+            const type = $('#adjItemType').val();
+            const list = type === 'sku' ? skuOptions : materialOptions;
+            $('#adjItemId').html(list.length
+                ? optionsHtml(list)
+                : '<option value="">（列表为空，请先在对应页面新增）</option>');
+        }
+
+        function refreshPurchaseSelect() {
+            $('#inPurchaseOrder').html(purchaseOrders.length
+                ? purchaseOrders.map(p => `<option value="${p.id}">${esc(p.po_number)} · ${esc(p.supplier_name || '')} · ${p.received_count}/${p.item_count}</option>`).join('')
+                : '<option value="">（没有未完成到货的采购单）</option>');
+            currentPo = null;
+            $('#inPoBody').html('<tr><td colspan="4" class="text-center text-secondary py-3">请选择采购单并载入明细</td></tr>');
+        }
+
+        function renderPoItems() {
+            if (!currentPo) return;
+            const items = currentPo.items || [];
+            if (!items.length) {
+                $('#inPoBody').html('<tr><td colspan="4" class="text-center text-secondary py-3">该采购单没有明细</td></tr>');
+                return;
+            }
+            $('#inPoBody').html(items.map(it => `
+                <tr>
+                    <td>
+                        <div class="fw-semibold">${esc(it.item_code)} ${esc(it.item_name || it.short_name || '')}</div>
+                        <div class="small text-secondary">${it.item_type === 'material' ? '材料' : '产品'}</div>
+                    </td>
+                    <td class="text-end">${num(it.quantity)}</td>
+                    <td class="text-end">${num(it.received_quantity)}</td>
+                    <td class="text-end">
+                        <input type="number" class="form-control form-control-sm text-end po-recv"
+                               data-id="${it.id}" min="0" step="0.001" value="${it.received_quantity || 0}">
+                    </td>
+                </tr>
+            `).join(''));
+        }
+
+        // ---- 入库弹窗 ----
+        $('#inBtn').on('click', async function () {
+            if (!skuOptions.length && !materialOptions.length) await loadItems();
+            refreshInItemSelect();
+            await loadPurchaseOrders();
+            refreshPurchaseSelect();
+            inModal.show();
+        });
+
+        $('#inSourceNav').on('click', 'button', function () {
+            inSource = $(this).data('source');
+            $('#inSourceNav button').removeClass('active');
+            $(this).addClass('active');
+            const manual = inSource === 'manual';
+            $('#inManualPane').toggleClass('d-none', !manual);
+            $('#inPurchasePane').toggleClass('d-none', manual);
+        });
+
+        $('#inItemType').on('change', refreshInItemSelect);
+
+        $('#loadPoItemsBtn').on('click', async function () {
+            const id = Number($('#inPurchaseOrder').val()) || 0;
+            if (!id) { alert('请先选择采购单'); return; }
+            $(this).prop('disabled', true).text('载入中...');
+            try {
+                const result = await $.getJSON('/api/purchase-orders/' + id, {});
+                if (!result.success) throw new Error(result.message || '载入失败');
+                currentPo = result.data;
+                renderPoItems();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '载入采购单失败');
+            } finally {
+                $(this).prop('disabled', false).text('载入明细');
+            }
+        });
+
+        $('#saveInBtn').on('click', async function () {
+            const btn = $(this);
+            btn.prop('disabled', true).text('保存中...');
+            try {
+                if (inSource === 'manual') {
+                    const payload = {
+                        item_type: $('#inItemType').val(),
+                        item_id: Number($('#inItemId').val()) || 0,
+                        quantity: Number($('#inQuantity').val()) || 0,
+                        unit_cost: Number($('#inUnitCost').val()) || 0,
+                        warehouse: $('#inWarehouse').val().trim(),
+                        remark: $('#inRemark').val().trim()
+                    };
+                    if (!payload.item_id) throw new Error('请选择物品');
+                    if (payload.quantity <= 0) throw new Error('入库数量必须大于0');
+
+                    const result = await $.ajax({
+                        url: '/api/inventory/in',
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify(payload),
+                        dataType: 'json'
+                    });
+                    if (!result.success) throw new Error(result.message || '入库失败');
+                } else {
+                    if (!currentPo) throw new Error('请先选择采购单并载入明细');
+                    const items = $('#inPoBody tr .po-recv').map(function () {
+                        return {
+                            id: Number($(this).data('id')),
+                            received_quantity: Number($(this).val()) || 0
+                        };
+                    }).get();
+                    if (!items.length) throw new Error('没有可登记的到货明细');
+
+                    const result = await $.ajax({
+                        url: `/api/purchase-orders/${currentPo.id}/receive`,
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({ items: items }),
+                        dataType: 'json'
+                    });
+                    if (!result.success) throw new Error(result.message || '到货登记失败');
+                }
+
+                inModal.hide();
+                loadStock();
+                loadTransactions();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '保存失败');
+            } finally {
+                btn.prop('disabled', false).text('保存入库');
+            }
+        });
+
+        // ---- 盘点调整 ----
+        $('#adjustBtn').on('click', async function () {
+            if (!skuOptions.length && !materialOptions.length) await loadItems();
+            refreshAdjItemSelect();
+            adjustModal.show();
+        });
+
+        $('#adjItemType').on('change', refreshAdjItemSelect);
+
+        $('#adjustForm').on('submit', async function (e) {
+            e.preventDefault();
+            const payload = {
+                item_type: $('#adjItemType').val(),
+                item_id: Number($('#adjItemId').val()) || 0,
+                direction: Number($('#adjDirection').val()),
+                quantity: Number($('#adjQuantity').val()) || 0,
+                unit_cost: Number($('#adjUnitCost').val()) || 0,
+                warehouse: $('#adjWarehouse').val().trim(),
+                remark: $('#adjRemark').val().trim()
+            };
+
+            if (!payload.item_id) { alert('请选择物品'); return; }
+            if (payload.quantity <= 0) { alert('数量必须大于0'); return; }
+
+            $('#saveAdjustBtn').prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: '/api/inventory/adjust',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '调整失败');
+                adjustModal.hide();
+                loadStock();
+                loadTransactions();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '调整失败');
+            } finally {
+                $('#saveAdjustBtn').prop('disabled', false).text('保存调整');
+            }
+        });
+
+        $('#txnFilter').on('click', 'button', function () {
+            setTxnFilter($(this).data('biz'));
+            loadTransactions();
+        });
+
+        // 直达「领料」记录：切到库存流水并只看领料出库。
+        $('#issueRecordsBtn').on('click', function () {
+            $('#itemTypeFilter').val('material');
+            setTxnFilter('requisition');
+            bootstrap.Tab.getOrCreateInstance(document.getElementById('txnTab')).show();
+            loadTransactions();
+        });
+
+        $('#searchBtn,#refreshBtn').on('click', function () { loadStock(); loadTransactions(); });
+        $('#itemTypeFilter').on('change', function () { loadStock(); loadTransactions(); });
+        $('#keyword').on('keydown', e => { if (e.key === 'Enter') { loadStock(); loadTransactions(); } });
+
+        loadStock();
+        loadTransactions();
+        loadItems();
+    });
+</script>
+{{end}}

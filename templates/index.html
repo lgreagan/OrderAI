@@ -1,0 +1,599 @@
+{{define "content"}}
+
+<div class="dashboard">
+
+    <!-- 页面标题 -->
+
+    <div class="page-heading">
+
+        <div>
+
+            <h1>
+                工作台
+            </h1>
+
+            <p>
+                欢迎使用 OrderAI 订单智能管理系统
+            </p>
+
+        </div>
+
+        <a
+            href="/orders/new"
+            class="btn btn-primary">
+
+            ＋ 创建订单
+
+        </a>
+
+    </div>
+
+
+    <!-- =========================
+         统计卡片
+    ========================== -->
+
+    <div class="stats-grid">
+
+        <!-- 订单总数 -->
+
+        <div class="stat-card">
+
+            <div class="stat-icon blue">
+                ▣
+            </div>
+
+            <div class="stat-content">
+
+                <div class="stat-label">
+                    订单总数
+                </div>
+
+                <div
+                    class="stat-value"
+                    id="totalOrders">
+
+                    -
+
+                </div>
+
+                <div class="stat-description">
+                    已进入系统的订单
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- 今日订单 -->
+
+        <div class="stat-card">
+
+            <div class="stat-icon green">
+                ✓
+            </div>
+
+            <div class="stat-content">
+
+                <div class="stat-label">
+                    今日订单
+                </div>
+
+                <div
+                    class="stat-value"
+                    id="todayOrders">
+
+                    -
+
+                </div>
+
+                <div class="stat-description">
+                    今天新增订单
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- 已确认 -->
+
+        <div class="stat-card">
+
+            <div class="stat-icon orange">
+                ◆
+            </div>
+
+            <div class="stat-content">
+
+                <div class="stat-label">
+                    已确认订单
+                </div>
+
+                <div
+                    class="stat-value"
+                    id="confirmedOrders">
+
+                    -
+
+                </div>
+
+                <div class="stat-description">
+                    等待后续处理
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- 产品 -->
+
+        <div class="stat-card">
+
+            <div class="stat-icon purple">
+                ◇
+            </div>
+
+            <div class="stat-content">
+
+                <div class="stat-label">
+                    产品数量
+                </div>
+
+                <div
+                    class="stat-value"
+                    id="totalProducts">
+
+                    -
+
+                </div>
+
+                <div class="stat-description">
+                    产品主数据
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================
+         主区域
+    ========================== -->
+
+    <div class="dashboard-grid">
+
+
+        <!-- 最近订单 -->
+
+        <div class="dashboard-card">
+
+            <div class="card-header">
+
+                <div>
+
+                    <div class="card-title">
+                        最近订单
+                    </div>
+
+                    <div class="card-subtitle">
+                        最近创建的订单
+                    </div>
+
+                </div>
+
+                <a
+                    href="/orders"
+                    class="btn btn-sm btn-outline-primary">
+
+                    查看全部
+
+                </a>
+
+            </div>
+
+
+            <div class="table-responsive">
+
+                <table class="table dashboard-table">
+
+                    <thead>
+
+                    <tr>
+
+                        <th>
+                            订单号
+                        </th>
+
+                        <th>
+                            客户
+                        </th>
+
+                        <th>
+                            国家
+                        </th>
+
+                        <th>
+                            状态
+                        </th>
+
+                        <th>
+                            时间
+                        </th>
+
+                    </tr>
+
+                    </thead>
+
+                    <tbody
+                        id="recentOrders">
+
+                    <tr>
+
+                        <td
+                            colspan="5"
+                            class="text-center text-muted py-4">
+
+                            正在加载...
+
+                        </td>
+
+                    </tr>
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </div>
+
+
+        <!-- 快捷操作 -->
+
+        <div class="dashboard-card">
+
+            <div class="card-header">
+
+                <div>
+
+                    <div class="card-title">
+                        快捷操作
+                    </div>
+
+                    <div class="card-subtitle">
+                        常用功能
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="quick-actions">
+
+                <a
+                    href="/"
+                    class="quick-action">
+
+                    <div class="quick-icon">
+                        ✦
+                    </div>
+
+                    <div>
+
+                        <div class="quick-title">
+                            AI识别订单
+                        </div>
+
+                        <div class="quick-description">
+                            上传客户订单图片
+                        </div>
+
+                    </div>
+
+                </a>
+
+
+                <a
+                    href="/orders"
+                    class="quick-action">
+
+                    <div class="quick-icon">
+                        ▣
+                    </div>
+
+                    <div>
+
+                        <div class="quick-title">
+                            订单管理
+                        </div>
+
+                        <div class="quick-description">
+                            查看和管理订单
+                        </div>
+
+                    </div>
+
+                </a>
+
+
+                <a
+                    href="/products"
+                    class="quick-action">
+
+                    <div class="quick-icon">
+                        ◇
+                    </div>
+
+                    <div>
+
+                        <div class="quick-title">
+                            产品管理
+                        </div>
+
+                        <div class="quick-description">
+                            管理产品和SKU
+                        </div>
+
+                    </div>
+
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================
+         系统说明
+    ========================== -->
+
+    <div class="dashboard-card system-card">
+
+        <div class="system-card-icon">
+            ✓
+        </div>
+
+        <div>
+
+            <div class="system-card-title">
+                OrderAI 系统运行正常
+            </div>
+
+            <div class="system-card-description">
+
+                AI订单识别、订单管理和数据库服务均已准备就绪。
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+$(document).ready(function () {
+
+    loadDashboard();
+
+});
+
+
+function loadDashboard() {
+
+    $.ajax({
+
+        url: "/api/orders",
+
+        type: "GET",
+
+        success: function (res) {
+
+            if (!res.success) {
+                return;
+            }
+
+            const orders = res.data || [];
+
+
+            /*
+             * 订单总数
+             */
+
+            $("#totalOrders")
+                .text(orders.length);
+
+
+            /*
+             * 今日订单
+             */
+
+            const today =
+                new Date()
+                    .toISOString()
+                    .substring(0, 10);
+
+
+            const todayOrders =
+                orders.filter(function (order) {
+
+                    return (
+                        order.created_at &&
+                        order.created_at.substring(0, 10)
+                            === today
+                    );
+
+                });
+
+
+            $("#todayOrders")
+                .text(todayOrders.length);
+
+
+            /*
+             * 已确认
+             */
+
+            const confirmed =
+                orders.filter(function (order) {
+
+                    return order.status === "confirmed";
+
+                });
+
+
+            $("#confirmedOrders")
+                .text(confirmed.length);
+
+
+            /*
+             * 最近订单
+             */
+
+            renderRecentOrders(orders);
+
+        }
+
+    });
+
+}
+
+
+function renderRecentOrders(orders) {
+
+    const tbody =
+        $("#recentOrders");
+
+
+    if (!orders.length) {
+
+        tbody.html(`
+            <tr>
+                <td
+                    colspan="5"
+                    class="text-center text-muted py-4">
+
+                    暂无订单
+
+                </td>
+            </tr>
+        `);
+
+        return;
+    }
+
+
+    const recent =
+        orders.slice(0, 8);
+
+
+    tbody.empty();
+
+
+    recent.forEach(function (order) {
+
+        tbody.append(`
+
+            <tr>
+
+                <td>
+
+                    <a
+                        href="/orders/${order.id}"
+                        class="order-link">
+
+                        ${escapeHtml(
+                            order.order_number
+                        )}
+
+                    </a>
+
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        order.customer || "-"
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        order.country || "-"
+                    )}
+                </td>
+
+                <td>
+
+                    <span class="badge bg-primary">
+                        已确认
+                    </span>
+
+                </td>
+
+                <td>
+                    ${formatDashboardDate(
+                        order.created_at
+                    )}
+                </td>
+
+            </tr>
+
+        `);
+
+    });
+
+}
+
+
+function formatDashboardDate(value) {
+
+    if (!value) {
+        return "-";
+    }
+
+    const date =
+        new Date(value);
+
+    if (isNaN(date.getTime())) {
+        return value;
+    }
+
+    return (
+        date.getFullYear() +
+        "-" +
+        String(date.getMonth() + 1).padStart(2, "0") +
+        "-" +
+        String(date.getDate()).padStart(2, "0") +
+        " " +
+        String(date.getHours()).padStart(2, "0") +
+        ":" +
+        String(date.getMinutes()).padStart(2, "0")
+    );
+
+}
+
+
+function escapeHtml(value) {
+
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+}
+
+</script>
+
+{{end}}

@@ -1,0 +1,256 @@
+
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">SKU 管理</h4>
+            <div class="text-secondary small">维护产品资料、价格、图片及包装规格</div>
+        </div>
+        <button class="btn btn-primary" id="addSkuBtn">
+            <i class="bi bi-plus-lg me-1"></i> 新增 SKU
+        </button>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-5">
+                    <input id="keyword" class="form-control"
+                           placeholder="搜索 SKU 编码、产品中英文名、型号、颜色">
+                </div>
+                <div class="col-lg-3">
+                    <select id="statusFilter" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="active">启用</option>
+                        <option value="inactive">停用</option>
+                    </select>
+                </div>
+                <div class="col-lg-4 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>图片</th>
+                            <th>排序</th>
+                            <th>SKU 编码</th>
+                            <th>产品中文名</th>
+                            <th>英文产品名</th>
+                            <th>产品简称</th>
+                            <th>型号</th>
+                            <th>颜色</th>
+                            <th>成本价</th>
+                            <th>美金售价</th>
+                            <th>申报单价</th>
+                            <th>每箱数量</th>
+                            <th>箱规（长×宽×高）</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="skuTableBody">
+                        <tr><td colspan="15" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="skuCount"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="skuModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="skuForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="skuModalTitle">新增 SKU</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+               <!-- 给modal-body加最大高度，超出滚动 -->
+                <div class="modal-body" style="max-height:70vh; overflow-y:auto;">
+                    <input type="hidden" id="skuId">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">排序</label>
+                            <input type="number" class="form-control" id="sortOrder" min="0" step="1" value="0">
+                            <div class="form-text">数字越小越靠前；列表统一按它排序</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">SKU 编码 *</label>
+                            <input class="form-control" id="skuCode" required maxlength="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">产品中文名 *</label>
+                            <input class="form-control" id="productNameZh" required maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">英文产品名 *</label>
+                            <input class="form-control" id="productName" required maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">产品简称（PI 用）</label>
+                            <input class="form-control" id="shortName" maxlength="100"
+                                   placeholder="如 V1-8cm blue">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">系列 / 版本</label>
+                            <input class="form-control" id="series" maxlength="50" placeholder="如 V1 / V2">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">尺寸</label>
+                            <input class="form-control" id="sizeSpec" maxlength="50" placeholder="如 6cm / 8cm">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">客户称呼颜色</label>
+                            <input class="form-control" id="piColor" maxlength="50" placeholder="如 blue / green / orange">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">类别</label>
+                            <select class="form-select" id="category">
+                                <option value="finished">成品</option>
+                                <option value="packaging">包材</option>
+                                <option value="material">原材料</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">型号 *</label>
+                            <input class="form-control" id="model" required maxlength="255">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">颜色</label>
+                            <input class="form-control" id="color" maxlength="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">价格（成本价）*</label>
+                            <input type="number" class="form-control" id="price"
+                                   min="0" step="0.01" value="0" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">PI 美金售价</label>
+                            <input type="number" class="form-control" id="priceUsd"
+                                   min="0" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">申报单价（USD）</label>
+                            <input type="number" class="form-control" id="declarePrice"
+                                   min="0" step="0.0001" value="0">
+                            <div class="form-text">报关资料用；填 0 则按报关品类的默认申报价</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">货币</label>
+                            <select class="form-select" id="currency">
+                                <option value="CNY">CNY 人民币</option>
+                                <option value="USD">USD 美元</option>
+                                <option value="EUR">EUR 欧元</option>
+                                <option value="GBP">GBP 英镑</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">每箱装多少个 *</label>
+                            <input type="number" class="form-control" id="packQuantity"
+                                   min="0.001" step="0.001" value="1" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">单位</label>
+                            <input class="form-control" id="unit" maxlength="30" value="pcs"
+                                   placeholder="pcs / 套">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">报关编码 HS Code</label>
+                            <input class="form-control" id="hsCode" maxlength="50">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">报关品类</label>
+                            <select class="form-select" id="productCategoryId"></select>
+                            <div class="form-text">决定报关资料上的品名/材质/海关编码/用途</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">产品 ASIN</label>
+                            <input class="form-control" id="asin" maxlength="50" placeholder="如 B08Y93833P">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">产品 FNSKU</label>
+                            <input class="form-control" id="fnsku" maxlength="50" placeholder="如 X002MG3TF1">
+                            <div class="form-text">报关资料 DE 模板的「产品ASIN/产品FNSKU」列</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" id="skuStatus">
+                                <option value="active">启用</option>
+                                <option value="inactive">停用</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">箱长</label>
+                            <input type="number" class="form-control" id="boxLength" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">箱宽</label>
+                            <input type="number" class="form-control" id="boxWidth" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">箱高</label>
+                            <input type="number" class="form-control" id="boxHeight" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">箱规单位</label>
+                            <select class="form-select" id="boxUnit">
+                                <option value="cm">cm</option>
+                                <option value="mm">mm</option>
+                                <option value="inch">inch</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">整箱重量</label>
+                            <input type="number" class="form-control" id="boxWeight" min="0" step="0.001" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">重量单位</label>
+                            <select class="form-select" id="weightUnit">
+                                <option value="kg">kg</option>
+                                <option value="g">g</option>
+                                <option value="lb">lb</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">产品图片</label>
+                            <input type="file" class="form-control" id="skuImageFile" accept="image/*">
+                            <input type="hidden" id="skuImage">
+                            <div class="mt-2">
+                                <img id="skuImagePreview" src="" alt="产品图片预览"
+                                     style="display:none;max-width:180px;max-height:180px;object-fit:contain">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">产品描述</label>
+                            <textarea class="form-control" id="description" rows="3"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">备注</label>
+                            <textarea class="form-control" id="remark" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="saveSkuBtn">保存 SKU</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="/web/js/products.js"></script>
+{{end}}

@@ -1,0 +1,511 @@
+{{define "content"}}
+<style>
+    @media print {
+        .sidebar,
+        .topbar,
+        .footer,
+        .no-print {
+            display: none !important;
+        }
+
+        .app {
+            display: block;
+        }
+
+        .content {
+            padding: 0;
+        }
+
+        @page {
+            size: A4 landscape;
+            margin: 10mm;
+        }
+    }
+</style>
+
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+        <div>
+            <h4 class="mb-1">财务报表</h4>
+            <div class="text-secondary small">
+                收入按 PI（货款 + 箱费）折人民币，成本同时给出「标准成本」与「实际采购成本」两个口径
+            </div>
+        </div>
+        <div class="d-flex gap-2 no-print">
+            <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+            <button class="btn btn-primary" id="printBtn">打印 / 保存为 PDF</button>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3 no-print">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-6 col-md-2">
+                    <label class="form-label small mb-1">签发日期起</label>
+                    <input type="date" class="form-control form-control-sm" id="dateFrom">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small mb-1">签发日期止</label>
+                    <input type="date" class="form-control form-control-sm" id="dateTo">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1">客户</label>
+                    <input type="text" class="form-control form-control-sm" id="customer" placeholder="客户名称">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1">关键字</label>
+                    <input type="text" class="form-control form-control-sm" id="keyword" placeholder="订单号 / PI 号">
+                </div>
+                <div class="col-12 col-md-2 d-flex gap-2">
+                    <button class="btn btn-sm btn-primary flex-fill" id="queryBtn">查询</button>
+                    <button class="btn btn-sm btn-outline-secondary flex-fill" id="resetBtn">重置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="rateNotice"></div>
+
+    <div id="messageArea"></div>
+
+    <div class="row g-3 mb-3" id="cardRow"></div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <h6 class="mb-3">一、订单利润明细</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="min-width:150px">订单 / 客户</th>
+                            <th style="min-width:110px">PI 号</th>
+                            <th class="text-end">货款 USD</th>
+                            <th class="text-end">箱费 USD</th>
+                            <th class="text-end">收入 CNY</th>
+                            <th class="text-end">汇率</th>
+                            <th class="text-end">标准成本 CNY</th>
+                            <th class="text-end">毛利(标准)</th>
+                            <th class="text-end">毛利率</th>
+                            <th class="text-end">实际成本 CNY</th>
+                            <th class="text-end">毛利(实际)</th>
+                            <th class="text-end">毛利率</th>
+                            <th style="min-width:130px">采购单</th>
+                        </tr>
+                    </thead>
+                    <tbody id="profitBody"></tbody>
+                    <tfoot id="profitFoot"></tfoot>
+                </table>
+            </div>
+            <div class="form-text mt-2" id="profitNote"></div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-xl-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="mb-3">二、月度利润汇总</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>月份</th>
+                                    <th class="text-end">汇率</th>
+                                    <th class="text-end">订单数</th>
+                                    <th class="text-end">收入 CNY</th>
+                                    <th class="text-end">毛利(标准)</th>
+                                    <th class="text-end">毛利率</th>
+                                    <th class="text-end">实际成本</th>
+                                    <th class="text-end">毛利(实际)</th>
+                                    <th class="text-end">毛利率</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monthBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="mb-2">三、运费 / 保险 代收代付</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>订单</th>
+                                    <th class="text-end">向客户收取</th>
+                                    <th class="text-end">发货实付</th>
+                                    <th class="text-end">差额</th>
+                                </tr>
+                            </thead>
+                            <tbody id="passBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="form-text mt-2">
+                        运费与保险按 PI 向客户收取、按发货单实际支付，属代收代付，不计入毛利。
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mt-3">
+        <div class="card-body">
+            <h6 class="mb-1">四、采购缺口明细</h6>
+            <div class="text-secondary small mb-3">
+                以下订单的采购数量未覆盖 PI 出货数量（含未下采购单的订单），实际成本无法按采购单计算。
+                <strong>数量缺口 = PI 出货数量 − 已采购数量</strong>，可直接照此补采购单数量。
+            </div>
+            <div class="table-responsive" style="max-height:340px;overflow:auto">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="min-width:130px">订单 / 客户</th>
+                            <th style="min-width:110px">PI 号</th>
+                            <th style="min-width:200px">产品</th>
+                            <th class="text-end">出货数量</th>
+                            <th class="text-end">已采购</th>
+                            <th class="text-end">数量缺口</th>
+                            <th style="min-width:130px">采购单</th>
+                        </tr>
+                    </thead>
+                    <tbody id="shortageBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mt-3">
+        <div class="card-body">
+            <h6 class="mb-2">口径说明</h6>
+            <ul class="text-secondary small mb-0">
+                <li>收入 = PI 明细的「货款 + 箱费」，已标记收款的行不计入；按<strong>该 PI 签发月份</strong>的汇率折算为人民币。</li>
+                <li>月度汇率在「系统设置 → 月度汇率」按月份维护，跨月不会串用汇率；该月未维护时用默认汇率，报表会标注 ⚠ 并提示。</li>
+                <li>标准成本 = Σ(数量 × 主数据成本价)，产品取 <code>skus.price</code>、材料取 <code>materials.price</code>。</li>
+                <li>实际采购成本 = 该订单关联采购单的合计金额（不含已取消），比标准成本更接近真实利润。</li>
+                <li>采购单数量未覆盖 PI 出货数量时（动用历史库存、或采购单未填数量），该订单显示「采购未齐」并排除在实际口径之外，避免成本偏低。</li>
+                <li>「四、采购缺口明细」按 SKU 列出这些订单还差多少采购数量，可直接照此补采购单。</li>
+                <li>实际成本口径只覆盖已下采购单的订单，其毛利率也只用这些订单的收入作分母；未采购显示为「未采购」。</li>
+                <li>毛利 = 收入 − 成本；毛利率 = 毛利 ÷ 收入。运费/保险为代收代付，不影响毛利。</li>
+                <li>未关联客户订单的 PI 明细（例如手工添加的箱费行）单独成行，只参与收入与标准成本口径。</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function num(value, digits) {
+            return Number(value || 0).toLocaleString('en-US', {
+                minimumFractionDigits: digits, maximumFractionDigits: digits
+            });
+        }
+
+        function money(value) { return num(value, 2); }
+        function pct(value) { return (Number(value || 0) * 100).toFixed(1) + '%'; }
+        function qty(value) { return Number(value || 0).toFixed(3).replace(/\.?0+$/, ''); }
+        function day(value) { return value ? String(value).slice(0, 10) : ''; }
+        function splitList(value) {
+            return String(value || '').split('|').filter(v => v !== '');
+        }
+
+        function profitClass(value) {
+            const n = Number(value || 0);
+            if (n < 0) return 'text-danger fw-semibold';
+            if (n > 0) return 'text-success';
+            return '';
+        }
+
+        // 实际成本口径只对「已关联订单 + 有采购单 + 采购数量覆盖出货」的行成立，
+        // 其余显示占位符，避免把不完整的采购金额当成真实成本。
+        function actualFallback(row) {
+            if (!row.order_id) return '<span class="text-secondary">—</span>';
+            if (row.no_purchase) return '<span class="badge text-bg-warning">未采购</span>';
+            if (row.purchase_incomplete) return '<span class="badge text-bg-warning">采购未齐</span>';
+            return null;
+        }
+
+        function actualCostCell(row) {
+            const fallback = actualFallback(row);
+            if (fallback) return fallback;
+
+            return money(row.actual_cost_cny);
+        }
+
+        function actualProfitCell(row, render) {
+            return actualFallback(row) || render();
+        }
+
+        function card(title, value, sub, color) {
+            return `
+                <div class="col-6 col-lg-3 col-xl-2">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="text-secondary small">${esc(title)}</div>
+                            <div class="fs-5 fw-bold ${color || 'text-dark'}">${esc(value)}</div>
+                            <div class="text-secondary small">${esc(sub || '')}</div>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function emptyRow(colspan, text) {
+            return `<tr><td colspan="${colspan}" class="text-center text-secondary py-3">${esc(text)}</td></tr>`;
+        }
+
+        function params() {
+            const query = [];
+            const add = (key, value) => {
+                if (value) query.push(`${key}=${encodeURIComponent(value)}`);
+            };
+            add('date_from', $('#dateFrom').val());
+            add('date_to', $('#dateTo').val());
+            add('customer', $('#customer').val().trim());
+            add('keyword', $('#keyword').val().trim());
+            return query.length ? `?${query.join('&')}` : '';
+        }
+
+        // 未维护月度汇率的月份会按默认汇率折算，这里明确提示，避免静默沿用别的汇率。
+        function renderRateNotice(s) {
+            const months = (s.fallback_months || []).map(m => m || '未填签发日期');
+            if (!months.length) {
+                $('#rateNotice').empty();
+                return;
+            }
+
+            $('#rateNotice').html(`
+                <div class="alert alert-warning py-2 no-print">
+                    以下期间未维护月度汇率，已按默认汇率 <b>${esc(s.default_exchange_rate)}</b> 折算：
+                    <b>${esc(months.join('、'))}</b>
+                    — <a href="/settings" class="alert-link">去维护月度汇率</a>
+                </div>`);
+        }
+
+        function renderCards(s) {
+            $('#cardRow').html([
+                card('销售收入', `${money(s.revenue_cny)} CNY`,
+                    `${money(s.revenue_usd)} USD @ 加权平均 ${s.effective_rate}`, 'text-primary'),
+                card('标准成本', money(s.std_cost_cny),
+                    `毛利 ${money(s.gross_std_cny)}`),
+                card('实际采购成本', money(s.actual_cost_cny),
+                    `覆盖 ${s.actual_order_count}/${s.order_count} 个订单`),
+                card('毛利（标准成本口径）', money(s.gross_std_cny),
+                    `毛利率 ${pct(s.margin_std)}`, profitClass(s.gross_std_cny)),
+                card('毛利（实际成本口径）', money(s.gross_actual_cny),
+                    `毛利率 ${pct(s.margin_actual)}`, profitClass(s.gross_actual_cny)),
+                card('应收未收', `${money(s.pi.unpaid_usd)} USD`,
+                    `开票 ${money(s.pi.amount_usd)} / 已收 ${money(s.pi.paid_usd)}`, 'text-danger')
+            ].join(''));
+
+            $('#profitNote').html(
+                `统计 ${s.order_count} 个订单、PI ${s.pi.count} 张；`
+                + `实际成本口径覆盖 ${s.actual_order_count} 个订单`
+                + (s.incomplete_purchase_count > 0
+                    ? `，${s.incomplete_purchase_count} 个订单采购数量未覆盖出货（详见「四、采购缺口明细」）`
+                    : '')
+                + (s.no_purchase_count > 0 ? `，另有 ${s.no_purchase_count} 个订单未下采购单` : '')
+                + (s.missing_goods_cost > 0 ? `；${s.missing_goods_cost} 行货款缺 SKU 成本价，标准成本偏低` : '')
+                + (s.missing_box_cost > 0 ? `；${s.missing_box_cost} 行箱费缺材料单价，标准成本偏低` : '')
+            );
+        }
+
+        function renderProfit(rows, s) {
+            if (!rows.length) {
+                $('#profitBody').html(emptyRow(13, '没有符合条件的数据'));
+                $('#profitFoot').empty();
+                return;
+            }
+
+            $('#profitBody').html(rows.map(r => {
+                const order = r.order_id
+                    ? `<a href="/orders/${r.order_id}" class="text-decoration-none fw-semibold">${esc(r.order_number || ('#' + r.order_id))}</a>`
+                    : '<span class="fw-semibold text-secondary">未关联订单</span>';
+                const sub = [r.customer, r.country].filter(v => v).join(' · ');
+                const issued = day(r.issued_date);
+                const pos = splitList(r.purchase_orders);
+
+                return `
+                    <tr>
+                        <td>
+                            ${order}
+                            <div class="text-secondary small">${esc(sub)}</div>
+                        </td>
+                        <td>
+                            <div class="small">${esc(splitList(r.pi_numbers).join('、'))}</div>
+                            <div class="text-secondary small">${esc(issued)}</div>
+                        </td>
+                        <td class="text-end">${money(r.goods_usd)}</td>
+                        <td class="text-end">${money(r.box_usd)}</td>
+                        <td class="text-end">${money(r.revenue_cny)}</td>
+                        <td class="text-end">${r.rate_fallback
+                            ? `<span class="text-warning fw-semibold" title="该月未维护月度汇率，已按默认汇率折算">${esc(r.exchange_rate)} ⚠</span>`
+                            : esc(r.exchange_rate)}</td>
+                        <td class="text-end">${money(r.std_cost_cny)}</td>
+                        <td class="text-end ${profitClass(r.gross_std_cny)}">${money(r.gross_std_cny)}</td>
+                        <td class="text-end ${profitClass(r.gross_std_cny)}">${pct(r.margin_std)}</td>
+                        <td class="text-end">${actualCostCell(r)}</td>
+                        <td class="text-end ${profitClass(r.gross_actual_cny)}">${actualProfitCell(r, () => money(r.gross_actual_cny))}</td>
+                        <td class="text-end ${profitClass(r.gross_actual_cny)}">${actualProfitCell(r, () => pct(r.margin_actual))}</td>
+                        <td class="small">${pos.length ? esc(pos.join('、')) : '—'}</td>
+                    </tr>`;
+            }).join(''));
+
+            $('#profitFoot').html(`
+                <tr class="table-light fw-semibold">
+                    <td colspan="2">
+                        合计：${s.order_count} 个订单
+                        <div class="text-secondary small fw-normal">实际成本口径含 ${s.actual_order_count} 个已采购订单</div>
+                    </td>
+                    <td class="text-end">${money(rows.reduce((sum, r) => sum + Number(r.goods_usd || 0), 0))}</td>
+                    <td class="text-end">${money(rows.reduce((sum, r) => sum + Number(r.box_usd || 0), 0))}</td>
+                    <td class="text-end">${money(s.revenue_cny)}</td>
+                    <td class="text-end">${s.effective_rate}</td>
+                    <td class="text-end">${money(s.std_cost_cny)}</td>
+                    <td class="text-end ${profitClass(s.gross_std_cny)}">${money(s.gross_std_cny)}</td>
+                    <td class="text-end">${pct(s.margin_std)}</td>
+                    <td class="text-end">${money(s.actual_cost_cny)}</td>
+                    <td class="text-end ${profitClass(s.gross_actual_cny)}">${money(s.gross_actual_cny)}</td>
+                    <td class="text-end">${pct(s.margin_actual)}</td>
+                    <td>—</td>
+                </tr>`);
+        }
+
+        function renderMonthly(list) {
+            if (!list.length) {
+                $('#monthBody').html(emptyRow(9, '暂无数据'));
+                return;
+            }
+            $('#monthBody').html(list.map(m => {
+                const covered = Number(m.actual_order_count || 0) > 0;
+                const actual = (render) => covered ? render() : '<span class="text-secondary">—</span>';
+                const rate = Number(m.exchange_rate || 0);
+
+                return `
+                    <tr>
+                        <td>
+                            <span class="fw-semibold">${esc(m.month || '未填日期')}</span>
+                            <div class="text-secondary small">实际口径 ${m.actual_order_count}/${m.order_count}</div>
+                        </td>
+                        <td class="text-end">${m.rate_fallback
+                            ? `<span class="text-warning fw-semibold" title="该月未维护月度汇率，已按默认汇率折算">${rate} ⚠</span>`
+                            : rate}</td>
+                        <td class="text-end">${m.order_count}</td>
+                        <td class="text-end">${money(m.revenue_cny)}</td>
+                        <td class="text-end ${profitClass(m.gross_std_cny)}">${money(m.gross_std_cny)}</td>
+                        <td class="text-end">${pct(m.margin_std)}</td>
+                        <td class="text-end">${actual(() => money(m.actual_cost_cny))}</td>
+                        <td class="text-end ${profitClass(m.gross_actual_cny)}">${actual(() => money(m.gross_actual_cny))}</td>
+                        <td class="text-end">${actual(() => pct(m.margin_actual))}</td>
+                    </tr>`;
+            }).join(''));
+        }
+
+        function renderPassThrough(rows) {
+            const list = rows.filter(r => Number(r.freight_usd || 0) !== 0
+                || Number(r.insurance_usd || 0) !== 0
+                || Number(r.ship_freight_usd || 0) !== 0
+                || Number(r.ship_insurance_usd || 0) !== 0);
+
+            if (!list.length) {
+                $('#passBody').html(emptyRow(4, '暂无运费 / 保险数据'));
+                return;
+            }
+
+            $('#passBody').html(list.map(r => {
+                const billed = Number(r.freight_usd || 0) + Number(r.insurance_usd || 0);
+                const paid = Number(r.ship_freight_usd || 0) + Number(r.ship_insurance_usd || 0);
+                const label = r.order_id
+                    ? `${esc(r.order_number || ('#' + r.order_id))}`
+                    : '未关联订单';
+                return `
+                    <tr>
+                        <td>
+                            ${label}
+                            <div class="text-secondary small">${esc(r.customer)}</div>
+                        </td>
+                        <td class="text-end">
+                            ${money(billed)}
+                            <div class="text-secondary small">运费 ${money(r.freight_usd)} / 保险 ${money(r.insurance_usd)}</div>
+                        </td>
+                        <td class="text-end">
+                            ${money(paid)}
+                            <div class="text-secondary small">运费 ${money(r.ship_freight_usd)} / 保险 ${money(r.ship_insurance_usd)}</div>
+                        </td>
+                        <td class="text-end ${profitClass(billed - paid)}">${money(billed - paid)}</td>
+                    </tr>`;
+            }).join(''));
+        }
+
+        function renderShortages(list) {
+            if (!list.length) {
+                $('#shortageBody').html(emptyRow(7, '所有订单的采购数量都已覆盖 PI 出货，没有缺口'));
+                return;
+            }
+
+            $('#shortageBody').html(list.map(s => {
+                const order = `
+                    <a href="/orders/${s.order_id}" class="text-decoration-none fw-semibold">${esc(s.order_number || ('#' + s.order_id))}</a>
+                    <div class="text-secondary small">${esc(s.customer)}</div>`;
+                const product = `
+                    <div class="fw-semibold">${esc(s.sku_code)}</div>
+                    <div class="text-secondary small">${esc(s.sku_name)}${s.spec ? ' · ' + esc(s.spec) : ''}</div>`;
+
+                return `
+                    <tr>
+                        <td>${order}</td>
+                        <td class="small">${esc(splitList(s.pi_numbers).join('、'))}</td>
+                        <td>${product}</td>
+                        <td class="text-end">${qty(s.shipped_qty)} ${esc(s.unit || '')}</td>
+                        <td class="text-end">${qty(s.purchased_qty)}</td>
+                        <td class="text-end text-danger fw-semibold">${qty(s.shortage_qty)}</td>
+                        <td class="small">${s.po_numbers
+                            ? esc(splitList(s.po_numbers).join('、'))
+                            : '<span class="text-secondary">未下采购单</span>'}</td>
+                    </tr>`;
+            }).join(''));
+        }
+
+        async function load() {
+            $('#messageArea').empty();
+            try {
+                const result = await $.getJSON(`/api/finance/report${params()}`);
+                if (!result.success) throw new Error(result.message || '读取失败');
+
+                const data = result.data || {};
+                const rows = data.rows || [];
+                const summary = data.summary || { pi: {} };
+
+                renderRateNotice(summary);
+                renderCards(summary);
+                renderProfit(rows, summary);
+                renderMonthly(data.monthly || []);
+                renderPassThrough(rows);
+                renderShortages(data.shortages || []);
+            } catch (err) {
+                $('#messageArea').html(
+                    `<div class="alert alert-danger">${esc(err.responseJSON?.message || err.message || '读取财务数据失败')}</div>`
+                );
+            }
+        }
+
+        $('#queryBtn').on('click', load);
+        $('#refreshBtn').on('click', load);
+        $('#printBtn').on('click', () => window.print());
+        $('#resetBtn').on('click', () => {
+            $('#dateFrom,#dateTo,#customer,#keyword').val('');
+            load();
+        });
+
+        load();
+    });
+</script>
+{{end}}

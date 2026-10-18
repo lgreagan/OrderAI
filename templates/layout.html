@@ -1,0 +1,358 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        {{if .title}}
+            {{.title}} - OrderAI
+        {{else}}
+            OrderAI
+        {{end}}
+    </title>
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    >
+
+    <link
+        href="/web/css/app.css"
+        rel="stylesheet"
+    >
+
+    <!--
+        页面内容里的内联脚本在解析时就会执行，
+        所以 jQuery 必须在 content 之前加载。
+    -->
+
+    <script
+        src="https://code.jquery.com/jquery-3.7.1.min.js">
+    </script>
+
+    <script
+        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js">
+    </script>
+
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- =========================
+         左侧导航
+    ========================== -->
+
+    <aside class="sidebar">
+
+        <!-- Logo -->
+
+        <div class="sidebar-logo">
+
+            <div class="logo-icon">
+                O
+            </div>
+
+            <div class="logo-text">
+
+                <div class="logo-title">
+                    OrderAI
+                </div>
+
+                <div class="logo-subtitle">
+                    Order Management
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- 导航 -->
+
+        <nav class="sidebar-nav">
+
+            <div class="nav-section-title">
+                工作台
+            </div>
+
+            <a href="/" class="nav-item" data-page="dashboard">
+                <span class="nav-icon">⌂</span>
+                <span>工作台</span>
+            </a>
+
+            <div class="nav-section-title">
+                订单管理
+            </div>
+
+            <a href="/orders" class="nav-item" data-page="orders">
+                <span class="nav-icon">▣</span>
+                <span>订单管理</span>
+            </a>
+
+            <a href="/purchase-orders" class="nav-item" data-page="purchase-orders">
+                <span class="nav-icon">▤</span>
+                <span>采购订单</span>
+            </a>
+
+            <a href="/production-orders" class="nav-item" data-page="production-orders">
+                <span class="nav-icon">▧</span>
+                <span>生产订单</span>
+            </a>
+
+            <a href="/shipments" class="nav-item" data-page="shipments">
+                <span class="nav-icon">▨</span>
+                <span>发货管理</span>
+            </a>
+
+            <div class="nav-section-title">
+                物料管理
+            </div>
+
+            <a href="/products" class="nav-item" data-page="products">
+                <span class="nav-icon">◇</span>
+                <span>产品管理</span>
+            </a>
+
+            <a href="/materials" class="nav-item" data-page="materials">
+                <span class="nav-icon">▩</span>
+                <span>材料管理</span>
+            </a>
+
+            <a href="/product-bom" class="nav-item" data-page="product-bom">
+                <span class="nav-icon">▫</span>
+                <span>产品用料</span>
+            </a>
+
+            <a href="/product-match-rules" class="nav-item" data-page="product-match-rules">
+                <span class="nav-icon">⌗</span>
+                <span>产品匹配规则</span>
+            </a>
+
+            <div class="nav-section-title">
+                库存
+            </div>
+
+            <a href="/inventory" class="nav-item" data-page="inventory">
+                <span class="nav-icon">▦</span>
+                <span>库存管理</span>
+            </a>
+
+            <a href="/material-issues" class="nav-item" data-page="material-issues">
+                <span class="nav-icon">⇩</span>
+                <span>领料出库</span>
+            </a>
+
+            <div class="nav-section-title">
+                财务管理
+            </div>
+
+            <a href="/proforma-invoices" class="nav-item" data-page="proforma-invoices">
+                <span class="nav-icon">◈</span>
+                <span>形式发票 PI</span>
+            </a>
+
+            <a href="/payments" class="nav-item" data-page="payments">
+                <span class="nav-icon">￥</span>
+                <span>收款管理</span>
+            </a>
+
+            <a href="/finance" class="nav-item" data-page="finance">
+                <span class="nav-icon">∑</span>
+                <span>财务报表</span>
+            </a>
+
+            <div class="nav-section-title">
+                报关管理
+            </div>
+
+            <a href="/product-categories" class="nav-item" data-page="product-categories">
+                <span class="nav-icon">◧</span>
+                <span>报关品管理</span>
+            </a>
+
+            <a href="/declaration-templates" class="nav-item" data-page="declaration-templates">
+                <span class="nav-icon">◨</span>
+                <span>报关模板</span>
+            </a>
+
+            <div class="nav-section-title">
+                AI中心
+            </div>
+
+            <a href="/orderupload" class="nav-item" data-page="ai">
+                <span class="nav-icon">✦</span>
+                <span>AI订单识别</span>
+            </a>
+
+            <div class="nav-section-title">
+                数据
+            </div>
+
+            <a href="/statistics" class="nav-item" data-page="statistics">
+                <span class="nav-icon">▥</span>
+                <span>数据统计</span>
+            </a>
+
+            <div class="nav-section-title">
+                系统
+            </div>
+
+            <a href="/settings" class="nav-item" data-page="settings">
+                <span class="nav-icon">⚙</span>
+                <span>系统设置</span>
+            </a>
+
+            <a href="/operation-logs" class="nav-item" data-page="operation-logs">
+                <span class="nav-icon">▤</span>
+                <span>操作日志</span>
+            </a>
+
+        </nav>
+
+
+        <!-- 左下角系统状态 -->
+
+        <div class="sidebar-bottom">
+
+            <div class="system-status">
+
+                <span class="status-dot"></span>
+
+                <span>
+                    系统运行正常
+                </span>
+
+            </div>
+
+            <div class="version">
+                OrderAI v1.0.0
+            </div>
+
+        </div>
+
+    </aside>
+
+
+    <!-- =========================
+         右侧主体
+    ========================== -->
+
+    <div class="main">
+
+        <!-- 顶部栏 -->
+
+        <header class="topbar">
+
+            <div class="topbar-left">
+
+                <button
+                    type="button"
+                    id="sidebarToggle"
+                    class="sidebar-toggle">
+
+                    ☰
+
+                </button>
+
+
+                <div class="breadcrumb-text">
+
+                    {{if .title}}
+                        {{.title}}
+                    {{else}}
+                        工作台
+                    {{end}}
+
+                </div>
+
+            </div>
+
+
+            <div class="topbar-right">
+
+                <!-- 系统状态 -->
+
+                <div class="top-status">
+
+                    <span class="status-dot"></span>
+
+                    系统正常
+
+                </div>
+
+
+                <!-- 用户 -->
+
+                <div class="user-menu">
+
+                    <div class="user-avatar">
+                        管
+                    </div>
+
+                    <div class="user-info">
+
+                        <div class="user-name">
+                            管理员
+                        </div>
+
+                        <div class="user-role">
+                            Administrator
+                        </div>
+
+                    </div>
+
+                    <span class="user-arrow">
+                        ▾
+                    </span>
+
+                </div>
+
+            </div>
+
+        </header>
+
+
+        <!-- 页面内容 -->
+
+        <main class="content">
+
+            {{template "content" .}}
+
+        </main>
+
+
+        <!-- 底部 -->
+
+        <footer class="footer">
+
+            <span>
+                © 2026 OrderAI
+            </span>
+
+            <span>
+                订单智能管理系统
+            </span>
+
+        </footer>
+
+    </div>
+
+</div>
+
+
+<script
+    src="/web/js/app.js">
+</script>
+
+</body>
+</html>
+{{end}}

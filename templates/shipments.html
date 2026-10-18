@@ -1,0 +1,1363 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">发货管理</h4>
+            <div class="text-secondary small">按订单分批发货，记录运费/保险，发货后自动扣减库存</div>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary" id="pushDownBtn">从订单下推</button>
+            <button class="btn btn-primary" id="addShipmentBtn">+ 新建发货单</button>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body small text-secondary">
+            下推说明：选择客户订单，系统按该订单 <b>剩余未发数量</b> 下推一张发货单草稿，<b>默认全部一票发完</b>；
+            需要分批发货时，在明细里改数量或拆分批次即可。
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-lg-5">
+                    <input id="keyword" class="form-control" placeholder="搜索发货单号、订单号、客户、运单号">
+                </div>
+                <div class="col-lg-3">
+                    <select id="statusFilter" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="draft">草稿</option>
+                        <option value="shipped">已发货</option>
+                        <option value="delivered">已送达</option>
+                    </select>
+                </div>
+                <div class="col-lg-4 d-flex gap-2">
+                    <button class="btn btn-primary" id="searchBtn">搜索</button>
+                    <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>发货单号</th>
+                            <th>订单号</th>
+                            <th>客户</th>
+                            <th>批次</th>
+                            <th>发货日期</th>
+                            <th>运输方式</th>
+                            <th>箱数</th>
+                            <th>运费</th>
+                            <th>保险</th>
+                            <th>明细</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="shipmentBody">
+                        <tr><td colspan="12" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="shipmentCount"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="shipmentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form id="shipmentForm">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="shipmentModalTitle">新建发货单</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+               <div class="modal-body" style="max-height:70vh; overflow-y:auto; padding-bottom:2rem;">
+                    <input type="hidden" id="shipmentId">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">客户订单 *</label>
+                            <select class="form-select" id="orderId" required>
+                                <option value="">请选择订单</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">批次</label>
+                            <input type="number" class="form-control" id="batchNo" min="1" step="1" value="1">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">发货日期</label>
+                            <input type="date" class="form-control" id="shipDate">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" id="shipmentStatus">
+                                <option value="draft">草稿</option>
+                                <option value="shipped">已发货</option>
+                                <option value="delivered">已送达</option>
+                            </select>
+                            <div class="form-text" id="shipStatusHint"></div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">运输方式</label>
+                            <input class="form-control" id="shippingMethod" maxlength="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">承运商</label>
+                            <input class="form-control" id="carrier" maxlength="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">运单号</label>
+                            <input class="form-control" id="trackingNo" maxlength="100">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">运费</label>
+                            <input type="number" class="form-control" id="freightCost" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">保险</label>
+                            <input type="number" class="form-control" id="insuranceCost" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">货币</label>
+                            <select class="form-select" id="currency">
+                                <option value="USD">USD</option>
+                                <option value="CNY">CNY</option>
+                                <option value="EUR">EUR</option>
+                                <option value="GBP">GBP</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12"><hr class="my-2"></div>
+                        <div class="col-12">
+                            <div class="fw-semibold">报关资料（生成货代模板用）</div>
+                            <div class="text-secondary small">系统没有的字段留空即可，生成后在 Excel 里补填</div>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">地址库编码</label>
+                            <input class="form-control" id="warehouseCode" list="warehouseList" maxlength="50"
+                                   placeholder="如 BHX4">
+                            <datalist id="warehouseList"></datalist>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">PO Number</label>
+                            <input class="form-control" id="poNumber" maxlength="200">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">报关方式</label>
+                            <input class="form-control" id="customsMode" list="customsModeList" maxlength="50">
+                            <datalist id="customsModeList">
+                                <option value="买单报关"></option>
+                                <option value="报关退税"></option>
+                            </datalist>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">交税方式</label>
+                            <input class="form-control" id="taxMode" list="taxModeList" maxlength="50">
+                            <datalist id="taxModeList">
+                                <option value="包税"></option>
+                                <option value="不包税"></option>
+                                <option value="自主税号"></option>
+                                <option value="自税递延"></option>
+                            </datalist>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">申报币种</label>
+                            <select class="form-select" id="declareCurrency">
+                                <option value="USD">美元</option>
+                                <option value="EUR">欧元</option>
+                                <option value="GBP">英镑</option>
+                                <option value="CNY">人民币</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">报关模板</label>
+                            <select class="form-select" id="templateId"></select>
+                        </div>
+                        <div class="col-12">
+                            <div class="d-flex flex-wrap gap-3 pt-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="isElectric">
+                                    <label class="form-check-label" for="isElectric">带电</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="isMagnetic">
+                                    <label class="form-check-label" for="isMagnetic">带磁</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="isLiquid">
+                                    <label class="form-check-label" for="isLiquid">液体</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="isPowder">
+                                    <label class="form-check-label" for="isPowder">粉末</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="isDanger">
+                                    <label class="form-check-label" for="isDanger">危险品</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="needInsurance">
+                                    <label class="form-check-label" for="needInsurance">购买保险</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="fw-semibold">发货明细（勾选并填写本次数量）</div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="fillAllBtn">全部发完</button>
+                            <span class="small text-secondary">产品描述将按 PI 约定自动生成</span>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <label class="form-label mb-0 small text-secondary" for="fbaPrefix">FBA前缀</label>
+                        <input class="form-control form-control-sm" id="fbaPrefix" style="max-width:260px"
+                               placeholder="如 FBA15MHZN8KKU0000">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="fillFbaBtn">一键填入</button>
+                        <span class="small text-secondary">箱号按明细行顺序累计填入「起始-结束」，如 FBA15MHZN8KKU00001-3 表示该行是第 1~3 箱（FBA15MHZN8KKU00001、FBA15MHZN8KKU00002、FBA15MHZN8KKU00003），尾号可再手工修改</span>
+                    </div>
+                    <div class="table-responsive" style="max-height:340px;overflow:auto">
+                        <table class="table table-sm align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:36px"></th>
+                                    <th>产品</th>
+                                    <th class="text-end text-nowrap">需求</th>
+                                    <th class="text-end text-nowrap">已发</th>
+                                    <th class="text-end text-nowrap">剩余</th>
+                                    <th style="width:110px" class="text-end text-nowrap">本次数量</th>
+                                    <th class="text-end text-nowrap">每箱</th>
+                                    <th class="text-end text-nowrap">单价</th>
+                                    <th style="width:80px" class="text-end text-nowrap">箱数</th>
+                                    <th style="min-width:320px">货箱编号/FBA</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lineBody">
+                                <tr><td colspan="10" class="text-center text-secondary py-4">请先选择客户订单</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="d-flex flex-wrap align-items-baseline gap-4 mt-2 small d-none" id="cartonSummaryBar">
+                        <span>合计箱数
+                            <span class="fs-6 fw-semibold" id="cartonSummaryTotal">0</span> 箱
+                            <span class="text-secondary" id="cartonSummaryTotalRows"></span>
+                        </span>
+                        <span>本次发货
+                            <span class="fs-6 fw-semibold text-primary" id="cartonSummaryShip">0</span> 箱
+                            <span class="text-secondary" id="cartonSummaryShipRows"></span>
+                        </span>
+                    </div>
+
+                    <div class="alert alert-light border py-2 px-3 small mt-2 d-none" id="packagingPreviewBar"></div>
+
+                    <div class="col-12 mt-3">
+                        <label class="form-label">备注</label>
+                        <textarea class="form-control" id="remark" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="saveShipmentBtn">保存发货单</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 从客户订单下推发货单 -->
+<div class="modal fade" id="pushModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">从客户订单下推发货单</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2 small text-secondary">
+                    选择客户订单，系统按 <b>剩余未发数量</b> 下推发货单草稿并保存，默认全部一票发完。
+                </div>
+                <select class="form-select" id="pushOrderId">
+                    <option value="">请选择订单</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="doPushBtn">下推并保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 生成报关资料 -->
+<div class="modal fade" id="declarationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">生成报关资料</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-md-4">
+                        <label class="form-label">报关模板</label>
+                        <select class="form-select" id="declTemplateId"></select>
+                    </div>
+                    <div class="col-md-8 small text-secondary" id="declSummary"></div>
+                </div>
+
+                <div class="alert alert-warning py-2 small d-none" id="declWarnings"></div>
+
+                <div class="small text-secondary mb-2">
+                    明细按<b>发货明细逐行</b>生成（一行 = 一条发货明细，海关能看到每箱装的具体产品），
+                    数量与箱数可在此微调，导出时以本页为准。
+                </div>
+
+                <div class="table-responsive" style="max-height:420px;overflow:auto">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:190px">货箱编号</th>
+                                <th style="width:120px">海关编码</th>
+                                <th>中文品名</th>
+                                <th>英文品名</th>
+                                <th class="text-end" style="width:110px">数量</th>
+                                <th class="text-end" style="width:90px">箱数</th>
+                                <th class="text-end" style="width:100px">申报单价</th>
+                                <th class="text-end" style="width:90px">单箱数量</th>
+                            </tr>
+                        </thead>
+                        <tbody id="declBody">
+                            <tr><td colspan="8" class="text-center text-secondary py-4">正在装配...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mt-3 mb-1">
+                    <div class="fw-semibold small">历史导出记录（留档快照）</div>
+                    <button class="btn btn-sm btn-outline-secondary" id="declRecordRefresh">刷新</button>
+                </div>
+                <div class="table-responsive" style="max-height:170px;overflow:auto">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>时间</th>
+                                <th>模板</th>
+                                <th class="text-end">明细行数</th>
+                                <th class="text-end">总箱数</th>
+                                <th>文件名</th>
+                                <th>快照</th>
+                            </tr>
+                        </thead>
+                        <tbody id="declRecordBody">
+                            <tr><td colspan="6" class="text-center text-secondary py-3">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="exportDeclarationBtn">下载报关资料</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 报关资料导出留档快照 -->
+<div class="modal fade" id="declRecordModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="declRecordTitle">导出快照</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-secondary mb-2">
+                    以下内容是该次导出时写进 Excel 的数据快照，可在本页用「导出」按同样的明细重出一次。
+                </div>
+                <pre class="border rounded bg-light p-2" id="declRecordJson"
+                     style="max-height:60vh;overflow:auto;font-size:12px"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const api = '/api/shipments';
+        const modal = new bootstrap.Modal(document.getElementById('shipmentModal'));
+        const pushModal = new bootstrap.Modal(document.getElementById('pushModal'));
+        const declModal = new bootstrap.Modal(document.getElementById('declarationModal'));
+        const recordModal = new bootstrap.Modal(document.getElementById('declRecordModal'));
+        let shipments = [];
+        let orders = [];
+        let declShipmentId = 0;
+        let declDoc = null;
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+        function num(id) { return Number($('#' + id).val()) || 0; }
+        function qty(v) { return Number(v).toFixed(3).replace(/\.?0+$/, ''); }
+
+        // 草稿不扣库存：状态改为「已发货」/「已送达」时才出库，这里把它显示出来。
+        const statusPill = s => {
+            const map = {
+                draft: ['草稿 · 未扣库存', 'warning'],
+                shipped: ['已发货', 'primary'],
+                delivered: ['已送达', 'success']
+            };
+            const [text, color] = map[s] || [s, 'secondary'];
+            return `<span class="badge text-bg-${color}">${text}</span>`;
+        };
+
+        const shipmentStatusHint = () => {
+            $('#shipStatusHint').text(
+                $('#shipmentStatus').val() === 'draft'
+                    ? '草稿不扣库存，改为「已发货」才出库'
+                    : '保存后按明细出库，并自动核销包装材料'
+            );
+        };
+        $('#shipmentStatus').on('change', shipmentStatusHint);
+
+        async function loadShipments() {
+            $('#shipmentBody').html('<tr><td colspan="12" class="text-center py-4">正在加载...</td></tr>');
+            try {
+                const result = await $.getJSON(api, {
+                    keyword: $('#keyword').val().trim(),
+                    status: $('#statusFilter').val()
+                });
+                if (!result.success) throw new Error(result.message || '读取发货单失败');
+                shipments = result.data || [];
+                if (!shipments.length) {
+                    $('#shipmentBody').html('<tr><td colspan="12" class="text-center text-secondary py-4">暂无发货单</td></tr>');
+                    $('#shipmentCount').text('共 0 张发货单');
+                    return;
+                }
+                $('#shipmentBody').html(shipments.map(s => `
+                    <tr>
+                        <td class="fw-semibold">${esc(s.shipment_number)}</td>
+                        <td>${esc(s.order_number)}</td>
+                        <td>${esc(s.customer)}</td>
+                        <td>${s.batch_no}</td>
+                        <td>${s.ship_date ? esc(String(s.ship_date).slice(0, 10)) : ''}</td>
+                        <td>${esc(s.shipping_method)}</td>
+                        <td>${qty(s.carton_count)}</td>
+                        <td>${esc(s.currency)} ${Number(s.freight_cost || 0).toFixed(2)}</td>
+                        <td>${esc(s.currency)} ${Number(s.insurance_cost || 0).toFixed(2)}</td>
+                        <td>${s.item_count}</td>
+                        <td>${statusPill(s.status)}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary edit-shipment" data-id="${s.id}">编辑</button>
+                            <button class="btn btn-sm btn-outline-success declaration-shipment" data-id="${s.id}">报关资料</button>
+                            <button class="btn btn-sm btn-outline-danger delete-shipment" data-id="${s.id}">删除</button>
+                        </td>
+                    </tr>
+                `).join(''));
+                $('#shipmentCount').text(`共 ${shipments.length} 张发货单`);
+            } catch (err) {
+                $('#shipmentBody').html(
+                    `<tr><td colspan="12" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+            }
+        }
+
+        async function loadOrders() {
+            try {
+                const result = await $.getJSON('/api/orders');
+                orders = result.data || [];
+            } catch (err) { orders = []; }
+
+            const options = '<option value="">请选择订单</option>' + orders.map(o =>
+                `<option value="${o.id}">${esc(o.order_number)} · ${esc(o.customer || '')} · ${esc(o.country || '')}</option>`
+            ).join('');
+
+            $('#orderId').html(options);
+            $('#pushOrderId').html(options);
+        }
+
+        // 报关模板下拉（发货单表单里的「报关模板」与报关弹窗共用同一份数据）
+        async function loadDeclarationTemplates() {
+            let templates = [];
+            try {
+                const result = await $.getJSON('/api/declaration-templates');
+                templates = (result && result.data) || [];
+            } catch (err) { templates = []; }
+
+            const options = templates.map(t =>
+                // 名称与报关模板页一致：取模板登记名 declaration_templates.name
+                `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+            $('#templateId').html(options);
+            $('#declTemplateId').html(options);
+        }
+
+        // 地址库编码候选（仓库地址库的地址简称）
+        async function loadWarehouseOptions() {
+            try {
+                const result = await $.getJSON('/api/warehouse-addresses', { limit: 1000 });
+                const list = (result && result.data) || [];
+                $('#warehouseList').html(list.map(a =>
+                    `<option value="${esc(a.short_name)}"></option>`).join(''));
+            } catch (err) { /* 地址库未导入时忽略 */ }
+        }
+
+        // 明细表内容切换（空态/加载态/报错态/正常明细）后统一刷新箱数汇总。
+        function setLineBody(html) {
+            $('#lineBody').html(html);
+            refreshCartonSummary();
+        }
+
+        function resetForm() {
+            $('#shipmentForm')[0].reset();
+            $('#shipmentId').val('');
+            $('#batchNo').val('1');
+            $('#freightCost,#insuranceCost').val('0');
+            $('#currency').val('USD');
+            $('#shipmentStatus').val('draft');
+            $('#declareCurrency').val('USD');
+            $('#warehouseCode,#poNumber,#customsMode,#taxMode').val('');
+            $('#isElectric,#isMagnetic,#isLiquid,#isPowder,#isDanger,#needInsurance').prop('checked', false);
+            $('#fbaPrefix').val('');
+            shipmentStatusHint();
+            setLineBody('<tr><td colspan="10" class="text-center text-secondary py-4">请先选择客户订单</td></tr>');
+        }
+
+        function renderLines(lines, presets) {
+            if (!lines.length) {
+                setLineBody('<tr><td colspan="10" class="text-center text-secondary py-4">该订单没有可发货的匹配明细</td></tr>');
+                return;
+            }
+            presets = presets || {};
+
+            // 按订单行分组：同一 order_item_id 的多行即为一个组合套装的组成单品，
+            // 折叠为「父行(按套) + 子行(单品)」，避免套装拆出的单品与同名单品直配行混淆。
+            const groups = [];
+            const index = new Map();
+            lines.forEach(l => {
+                const key = String(l.order_item_id);
+                if (!index.has(key)) { index.set(key, groups.length); groups.push([]); }
+                groups[index.get(key)].push(l);
+            });
+
+            setLineBody(groups.map(g => (
+                g.length && g[0].match_type === 'rule'
+                    ? renderSetGroup(g, presets)
+                    : g.map(l => renderSingleRow(l, presets)).join('')
+            )).join(''));
+
+            // 回填后同步一次套装子行的单品数量显示。
+            $('#lineBody tr[data-kind="set"]').each(function () { syncSetChildren($(this)); });
+        }
+
+        // 列表显示名：一律显示**中文名称**。单品取 SKU 的 product_name_zh，
+        // 组合套装取组合规则的中文名（父行）。中文名缺失时才退回英文简称。
+        function lineName(l) {
+            return l.product_name_zh || l.short_name || l.customer_product_name || '';
+        }
+        // 套装父行显示名：组合规则的中文名，其次客户订单原件名。
+        function setName(l) {
+            return l.rule_name_zh || l.customer_product_name || l.product_name_zh || l.short_name || '';
+        }
+        // 记账/PI/报关用名：仍是 SKU 的 PI 简称（报关清关要英文品名），与显示名分开。
+        function skuLabel(l) {
+            return l.short_name || l.product_name_zh || l.customer_product_name || '';
+        }
+
+        function round3(value) { return Math.round((Number(value) || 0) * 1000) / 1000; }
+
+        // 单品直配行：一个订单行 = 一个 SKU，直接填写本次数量与箱数。
+        function renderSingleRow(l, presets) {
+            const key = `${l.order_item_id}-${l.sku_id ?? ''}`;
+            const preset = presets[key];
+            const hasPreset = !!preset;
+            const own = hasPreset ? Number(preset.qty) || 0 : 0;
+            const cartonNo = hasPreset ? (preset.carton_no || '') : '';
+            // 历史单据的箱数可能是小数（如 200 ÷ 400 = 0.5），回填时按整箱显示。
+            const cartonCount = hasPreset && Number(preset.carton_count) > 0
+                ? Math.ceil(Number(preset.carton_count)) : '';
+            // 接口返回的"已发/剩余"包含本单已填数量，因此本单最多可发 = 剩余 + 本单已填。
+            const available = Number(l.remaining_quantity || 0) + own;
+            const checked = hasPreset ? 'checked' : '';
+            return `
+                <tr data-kind="single" data-order-item-id="${l.order_item_id}" data-sku-id="${l.sku_id ?? ''}"
+                    data-short-name="${esc(skuLabel(l))}" data-pack="${l.pack_quantity}"
+                    data-price="${l.unit_price}" data-unit="${esc(l.unit)}"
+                    data-remaining="${available}" data-own="${own}">
+                    <td><input type="checkbox" class="form-check-input line-check" ${checked}></td>
+                    <td>${esc(lineName(l))}</td>
+                    <td class="text-end">${qty(l.required_quantity)}</td>
+                    <td class="text-end">${qty(l.shipped_quantity)}</td>
+                    <td class="text-end">${qty(available)}</td>
+                    <td><input type="number" class="form-control form-control-sm text-end line-qty"
+                               min="0" step="0.001" value="${hasPreset ? own : ''}"></td>
+                    <td class="text-end">${qty(l.pack_quantity)}</td>
+                    <td class="text-end">${Number(l.unit_price || 0).toFixed(2)}</td>
+                    <td><input type="number" class="form-control form-control-sm text-end line-cartons"
+                               min="0" step="1" value="${cartonCount}"></td>
+                    <td><input type="text" class="form-control form-control-sm line-carton"
+                               placeholder="FBA15MHZN8KKU000001" value="${esc(cartonNo)}"></td>
+                </tr>
+            `;
+        }
+
+        // 组合套装组：父行按「套」填写本次套数与箱数，子行数量自动按每套用量换算，
+        // 保证发出去的是整套（不会出现只发一半组成单品的情况）。
+        function renderSetGroup(lines, presets) {
+            const first = lines[0];
+            const orderItemId = first.order_item_id;
+            const setUnit = first.order_unit || '套';
+
+            const comps = lines.map(l => {
+                const preset = presets[`${orderItemId}-${l.sku_id ?? ''}`];
+                return {
+                    sku_id: l.sku_id,
+                    short_name: l.short_name || l.product_name_zh || '',
+                    name_zh: lineName(l),
+                    qps: Number(l.quantity_per_set) > 0 ? Number(l.quantity_per_set) : 1,
+                    required: Number(l.required_quantity) || 0,
+                    shipped: Number(l.shipped_quantity) || 0,
+                    pack: Number(l.pack_quantity) || 0,
+                    price: Number(l.unit_price) || 0,
+                    unit: l.unit || '',
+                    own: preset ? Number(preset.qty) || 0 : 0
+                };
+            });
+
+            // 已发套数取各组成单品「已发 ÷ 每套用量」的最小值，避免超出任一单品的已发量。
+            let shippedSets = null;
+            comps.forEach(c => {
+                const s = c.shipped / c.qps;
+                if (shippedSets === null || s < shippedSets) shippedSets = s;
+            });
+            if (shippedSets === null) shippedSets = 0;
+
+            const orderSets = Number(first.order_quantity) || 0;
+            const remainSets = Math.max(0, round3(orderSets - shippedSets));
+
+            // 编辑回填：由组成单品已填数量反推本单套数。
+            let ownSets = 0;
+            comps.forEach(c => {
+                const s = round3(c.own / c.qps);
+                if (s > ownSets) ownSets = s;
+            });
+            const availableSets = round3(remainSets + ownSets);
+            if (availableSets <= 0) ownSets = 0;
+
+            let cartonNo = '', cartonCount = '';
+            comps.forEach(c => {
+                const preset = presets[`${orderItemId}-${c.sku_id ?? ''}`];
+                if (!preset) return;
+                if (preset.carton_no) cartonNo = preset.carton_no;
+                if (Number(preset.carton_count) > 0) cartonCount = Math.ceil(Number(preset.carton_count));
+            });
+
+            // 组合箱规：每箱装几套（发货箱数按套折算，而不是按单个 SKU 的箱规）。
+            const setsPerCarton = Number(first.sets_per_carton) || 0;
+            // 已填套数时箱数一律按组合箱规重算，不沿用历史存值
+            // （历史单据的箱数可能是按 SKU 箱规算出的错值）。
+            if (ownSets > 0 && setsPerCarton > 0) {
+                cartonCount = Math.ceil(ownSets / setsPerCarton);
+            }
+            const setPrice = comps.reduce((sum, c) => sum + c.price * c.qps, 0);
+            const checked = ownSets > 0 ? 'checked' : '';
+            const displayName = setName(first);
+
+            const parent = `
+                <tr data-kind="set" data-order-item-id="${orderItemId}"
+                    data-set-name="${esc(displayName)}" data-unit="${esc(setUnit)}"
+                    data-pack="${setsPerCarton}" data-order-sets="${qty(orderSets)}"
+                    data-shipped-sets="${qty(shippedSets)}" data-remaining="${availableSets}"
+                    data-own="${ownSets}"
+                    data-components="${esc(JSON.stringify(comps))}">
+                    <td><input type="checkbox" class="form-check-input line-check" ${checked}></td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-link p-0 me-1 set-toggle text-decoration-none"
+                                title="展开/收起组成单品">&#9656;</button>
+                        <span class="fw-semibold">${esc(displayName)}</span>
+                        <span class="badge bg-primary-subtle text-primary-emphasis ms-1">套装</span>
+                    </td>
+                    <td class="text-end">${qty(orderSets)}</td>
+                    <td class="text-end">${qty(shippedSets)}</td>
+                    <td class="text-end">${qty(availableSets)}</td>
+                    <td><input type="number" class="form-control form-control-sm text-end line-qty set-qty"
+                               min="0" step="1" value="${ownSets > 0 ? ownSets : ''}"
+                               placeholder="${qty(setUnit)}"></td>
+                    <td class="text-end">${setsPerCarton > 0 ? `${qty(setsPerCarton)} ${esc(setUnit)}/箱` : '-'}</td>
+                    <td class="text-end">${setPrice.toFixed(2)}</td>
+                    <td><input type="number" class="form-control form-control-sm text-end line-cartons"
+                               min="0" step="1" value="${cartonCount}"></td>
+                    <td><input type="text" class="form-control form-control-sm line-carton"
+                               placeholder="FBA15MHZN8KKU000001" value="${esc(cartonNo)}"></td>
+                </tr>`;
+
+            // 组成单品子行：默认收起（界面简洁），点父行箭头展开。
+            // 每箱数量按组合口径折算（sets_per_carton × 每套用量），子行不单独填箱数。
+            const children = comps.map(c => `
+                <tr data-kind="set-child" data-parent-id="${orderItemId}" class="d-none">
+                    <td></td>
+                    <td class="ps-4 text-secondary">
+                        <span class="me-1">└</span>${esc(c.name_zh)}
+                        <span class="badge bg-light text-secondary border ms-1">${qty(c.qps)}/套</span>
+                    </td>
+                    <td class="text-end text-secondary">${qty(c.required)}</td>
+                    <td class="text-end text-secondary">${qty(c.shipped)}</td>
+                    <td class="text-end text-secondary">${qty(Math.max(0, c.required - c.shipped))}</td>
+                    <td class="text-end child-qty text-secondary">-</td>
+                    <td class="text-end text-secondary">${setsPerCarton > 0 ? qty(round3(setsPerCarton * c.qps)) : qty(c.pack)}</td>
+                    <td class="text-end text-secondary">${c.price.toFixed(2)}</td>
+                    <td colspan="2" class="text-secondary small">随父行</td>
+                </tr>`).join('');
+
+            return parent + children;
+        }
+
+        // 读取套装父行的组成单品清单。
+        function parseComponents(row) {
+            if (row.data('kind') !== 'set') return [];
+            try {
+                return JSON.parse(row.attr('data-components') || '[]');
+            } catch (err) { return []; }
+        }
+
+        // 父行套数变化时，同步子行的单品数量显示。
+        function syncSetChildren(row) {
+            const comps = parseComponents(row);
+            if (!comps.length) return;
+            const sets = Number(row.find('.set-qty').val()) || 0;
+            const parentId = String(row.data('order-item-id'));
+            let idx = 0;
+            $(`#lineBody tr[data-kind="set-child"][data-parent-id="${parentId}"]`).each(function () {
+                const c = comps[idx++];
+                if (!c) return;
+                const q = round3(sets * c.qps);
+                $(this).find('.child-qty').text(sets > 0 && q > 0 ? qty(q) : '-');
+            });
+        }
+
+        async function loadOrderLines(orderId, presets) {
+            if (!orderId) {
+                setLineBody('<tr><td colspan="10" class="text-center text-secondary py-4">请先选择客户订单</td></tr>');
+                return null;
+            }
+            setLineBody('<tr><td colspan="10" class="text-center py-4">正在加载可发货明细...</td></tr>');
+            try {
+                const result = await $.getJSON(`${api}/order/${orderId}/lines`);
+                if (!result.success) throw new Error(result.message || '读取明细失败');
+                const ctx = result.data;
+                if (!$('#shipmentId').val()) {
+                    $('#batchNo').val(ctx.next_batch_no);
+                    if (!$('#shippingMethod').val()) $('#shippingMethod').val(ctx.shipping_method || '');
+                }
+                renderLines(ctx.lines || [], presets);
+                return ctx;
+            } catch (err) {
+                setLineBody(
+                    `<tr><td colspan="10" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                );
+                return null;
+            }
+        }
+
+        $('#addShipmentBtn').on('click', async function () {
+            resetForm();
+            await loadOrders();
+            $('#shipmentModalTitle').text('新建发货单');
+            modal.show();
+        });
+
+        // 下推：按订单剩余未发数量一次性生成一张"全部发完"的发货单草稿。
+        $('#pushDownBtn').on('click', async function () {
+            await loadOrders();
+            $('#pushOrderId').val('');
+            pushModal.show();
+        });
+
+        $('#doPushBtn').on('click', async function () {
+            const orderId = Number($('#pushOrderId').val()) || 0;
+            if (!orderId) { alert('请选择订单'); return; }
+
+            $(this).prop('disabled', true).text('下推中...');
+            try {
+                const result = await $.ajax({
+                    url: `${api}/order/${orderId}/push`,
+                    method: 'POST',
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '下推失败');
+                pushModal.hide();
+                await loadShipments();
+                await openShipmentEditor(result.data.id);
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '下推发货单失败');
+            } finally {
+                $(this).prop('disabled', false).text('下推并保存');
+            }
+        });
+
+        // 按「本次数量 ÷ 每箱数量」带出箱数（人工改过箱数的行不再覆盖），用于生成 FBA 货箱号。
+        function suggestCartons(row) {
+            if (row.data('cartonManual')) return;
+            const pack = Number(row.data('pack')) || 0;
+            const quantity = Number(row.find('.line-qty').val()) || 0;
+            row.find('.line-cartons').val(pack > 0 && quantity > 0 ? Math.ceil(quantity / pack) : '');
+        }
+
+        // 明细表下方箱数汇总：合计为该订单所有行的箱数之和，「本次发货」只统计会保存的行（勾选且填了本次数量），便于对照 FBA 总箱数放心发货。
+        function refreshCartonSummary() {
+            const bar = $('#cartonSummaryBar');
+            const rows = $('#lineBody tr[data-order-item-id]');
+            if (!rows.length) {
+                bar.addClass('d-none');
+                $('#packagingPreviewBar').addClass('d-none').text('');
+                return;
+            }
+            let totalBoxes = 0, totalRows = 0, shipBoxes = 0, shipRows = 0;
+            rows.each(function () {
+                const row = $(this);
+                const cartons = Math.ceil(Number(row.find('.line-cartons').val()) || 0);
+                if (cartons <= 0) return;
+                totalBoxes += cartons;
+                totalRows += 1;
+                if (row.find('.line-check').is(':checked') && (Number(row.find('.line-qty').val()) || 0) > 0) {
+                    shipBoxes += cartons;
+                    shipRows += 1;
+                }
+            });
+            bar.removeClass('d-none');
+            $('#cartonSummaryTotal').text(totalBoxes);
+            $('#cartonSummaryTotalRows').text(`（${totalRows} 行）`);
+            $('#cartonSummaryShip').text(shipBoxes);
+            $('#cartonSummaryShipRows').text(`（${shipRows} 行）`);
+            refreshPackagingPreview();
+        }
+
+        // 包装材料预览：按「本次发货」的勾选行核算将随货消耗的包材。
+        // 发货时系统会自动核销这些材料，事先显示出来，避免库存被静默调整。
+        let packagingTimer = null;
+        function refreshPackagingPreview() {
+            const bar = $('#packagingPreviewBar');
+            if (packagingTimer) clearTimeout(packagingTimer);
+
+            const items = [];
+            $('#lineBody tr[data-order-item-id]').each(function () {
+                const row = $(this);
+                if (!row.find('.line-check').is(':checked')) return;
+                const quantity = Number(row.find('.line-qty').val()) || 0;
+                if (quantity <= 0) return;
+
+                // 套装父行：按「本次套数 × 每套用量」展开成组成单品再核算。
+                const comps = parseComponents(row);
+                if (comps.length) {
+                    comps.forEach(c => {
+                        const need = round3(quantity * c.qps);
+                        if (c.sku_id && need > 0) items.push({ sku_id: c.sku_id, quantity: need });
+                    });
+                    return;
+                }
+
+                const skuId = Number(row.data('sku-id')) || 0;
+                if (!skuId) return;
+                items.push({ sku_id: skuId, quantity: quantity });
+            });
+            if (!items.length) { bar.addClass('d-none').text(''); return; }
+
+            packagingTimer = setTimeout(async () => {
+                try {
+                    const result = await $.ajax({
+                        url: `${api}/packaging-needs`,
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({ items: items }),
+                        dataType: 'json'
+                    });
+                    const needs = (result.data || []).filter(n => Number(n.quantity) > 0);
+                    if (!needs.length) { bar.addClass('d-none').text(''); return; }
+                    bar.removeClass('d-none').html(
+                        '保存为「已发货」时，将自动核销包装材料：' +
+                        needs.map(n => `<b>${esc(n.material_name || n.material_code)}</b> ${qty(n.quantity)}${esc(n.unit || '')}`).join('、')
+                    );
+                } catch (err) {
+                    bar.addClass('d-none').text('');
+                }
+            }, 250);
+        }
+
+        $('#lineBody').on('input', '.line-cartons', function () {
+            $(this).closest('tr').data('cartonManual', true);
+            refreshCartonSummary();
+        });
+
+        // 勾选/取消勾选会改变「本次发货」的箱数，需要同步刷新汇总。
+        $('#lineBody').on('change', '.line-check', function () { refreshCartonSummary(); });
+
+        // 明细行一键按"本单最多可发数量"全部发完（分批发货时再单独改数量）。
+        // 套装父行的「最多可发」是套数（已按组成单品剩余量取最小），填完后子行数量自动跟随。
+        $('#fillAllBtn').on('click', function () {
+            $('#lineBody tr[data-order-item-id]').each(function () {
+                const row = $(this);
+                const available = Number(row.data('remaining')) || 0;
+                if (available <= 0) return;
+                row.find('.line-check').prop('checked', true);
+                row.find('.line-qty').val(available);
+                syncSetChildren(row);
+                suggestCartons(row);
+            });
+            refreshCartonSummary();
+        });
+
+        // 套装父行：套数 → 子行单品数量实时联动。
+        $('#lineBody').on('input', '.set-qty', function () {
+            syncSetChildren($(this).closest('tr'));
+        });
+
+        // 折叠/展开套装组成单品。
+        $('#lineBody').on('click', '.set-toggle', function () {
+            const btn = $(this);
+            const parentId = String(btn.closest('tr').data('order-item-id'));
+            const children = $(`#lineBody tr[data-kind="set-child"][data-parent-id="${parentId}"]`);
+            const collapsed = children.first().hasClass('d-none');
+            children.toggleClass('d-none', !collapsed);
+            btn.html(collapsed ? '&#9662;' : '&#9656;');
+        });
+
+        // 填写数量后带出箱数，用于生成 FBA 货箱号。
+        $('#lineBody').on('input', '.line-qty', function () {
+            suggestCartons($(this).closest('tr'));
+            refreshCartonSummary();
+        });
+
+        // 一键把 FBA 前缀填入所有明细行：箱号按明细行顺序累计，有箱数则生成「起始-结束」(如某行前面已有 5 箱、本行 4 箱则填 FBA15MHZN8KKU00006-9)，无箱数只填前缀待人工补尾号。
+        $('#fillFbaBtn').on('click', function () {
+            const prefix = $('#fbaPrefix').val().trim();
+            if (!prefix) { alert('请先填写 FBA 前缀'); return; }
+            const rows = $('#lineBody tr[data-order-item-id]');
+            if (!rows.length) { alert('没有可填入的明细行'); return; }
+            let nextBox = 1;
+            rows.each(function () {
+                const row = $(this);
+                // 箱数按整箱累计：0.5 箱也要占一个箱号（历史单据的箱数可能是小数）。
+                const cartons = Math.ceil(Number(row.find('.line-cartons').val()) || 0);
+                if (cartons <= 0) {
+                    row.find('.line-carton').val(prefix);
+                    return;
+                }
+                const start = nextBox;
+                const end = nextBox + cartons - 1;
+                nextBox = end + 1;
+                row.find('.line-carton').val(start === end ? `${prefix}${start}` : `${prefix}${start}-${end}`);
+            });
+        });
+
+        $('#orderId').on('change', function () { loadOrderLines($(this).val()); });
+
+        $('#shipmentBody').on('click', '.edit-shipment', async function () {
+            try {
+                await openShipmentEditor(Number($(this).data('id')));
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '读取发货单失败');
+            }
+        });
+
+        async function openShipmentEditor(id) {
+            await loadOrders();
+            const result = await $.getJSON(`${api}/${id}`);
+            if (!result.success) throw new Error(result.message || '读取失败');
+            const s = result.data;
+
+            resetForm();
+            $('#shipmentId').val(s.id);
+            $('#orderId').val(s.order_id);
+            $('#batchNo').val(s.batch_no);
+            $('#shipDate').val(s.ship_date ? String(s.ship_date).slice(0, 10) : '');
+            $('#shippingMethod').val(s.shipping_method);
+            $('#carrier').val(s.carrier);
+            $('#trackingNo').val(s.tracking_no);
+            $('#freightCost').val(s.freight_cost || 0);
+            $('#insuranceCost').val(s.insurance_cost || 0);
+            $('#currency').val(s.currency || 'USD');
+            $('#shipmentStatus').val(s.status || 'draft');
+            shipmentStatusHint();
+            $('#remark').val(s.remark || '');
+
+            $('#warehouseCode').val(s.warehouse_code || '');
+            $('#poNumber').val(s.po_number || '');
+            $('#customsMode').val(s.customs_mode || '');
+            $('#taxMode').val(s.tax_mode || '');
+            $('#declareCurrency').val(s.declare_currency || 'USD');
+            $('#templateId').val(s.template_id ? String(s.template_id) : $('#templateId').val());
+            $('#isElectric').prop('checked', !!s.is_electric);
+            $('#isMagnetic').prop('checked', !!s.is_magnetic);
+            $('#isLiquid').prop('checked', !!s.is_liquid);
+            $('#isPowder').prop('checked', !!s.is_powder);
+            $('#isDanger').prop('checked', !!s.is_danger);
+            $('#needInsurance').prop('checked', !!s.need_insurance);
+
+            const presets = {};
+            (s.items || []).forEach(it => {
+                if (it.order_item_id && it.sku_id) {
+                    presets[`${it.order_item_id}-${it.sku_id}`] = {
+                        qty: it.quantity,
+                        carton_count: it.carton_count || 0,
+                        carton_no: it.carton_no || ''
+                    };
+                }
+            });
+
+            await loadOrderLines(s.order_id, presets);
+            $('#shipmentModalTitle').text('编辑发货单');
+            modal.show();
+        }
+
+        $('#shipmentBody').on('click', '.delete-shipment', async function () {
+            const id = Number($(this).data('id'));
+            const s = shipments.find(x => Number(x.id) === id);
+            if (!s) return;
+            if (!confirm(`确定删除发货单「${s.shipment_number}」吗？`)) return;
+            try {
+                const result = await $.ajax({ url: `${api}/${id}`, method: 'DELETE', dataType: 'json' });
+                if (!result.success) throw new Error(result.message || '删除失败');
+                await loadShipments();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '删除失败');
+            }
+        });
+
+        $('#shipmentForm').on('submit', async function (e) {
+            e.preventDefault();
+            const id = $('#shipmentId').val();
+            const orderId = Number($('#orderId').val()) || 0;
+            if (!orderId) { alert('请选择客户订单'); return; }
+
+            const items = [];
+            $('#lineBody tr[data-order-item-id]').each(function () {
+                const row = $(this);
+                const checked = row.find('.line-check').is(':checked');
+                const quantity = Number(row.find('.line-qty').val()) || 0;
+                if (!checked || quantity <= 0) return;
+
+                const orderItemId = Number(row.data('order-item-id')) || null;
+                const cartonNo = row.find('.line-carton').val().trim();
+
+                // 套装父行：本次套数 × 每套用量 → 展开成各组成单品的发货明细行，
+                // 库存、报关仍按单品 SKU 记账。
+                // 每箱数量必须用**组合箱规**折算（每箱 N 套 × 每套 M 个），
+                // 否则箱数会按单个 SKU 的箱规算错（如 72 套/72 套每箱 = 1 箱，
+                // 用 SKU 箱规 144 会算成 0.5 箱）。
+                const comps = parseComponents(row);
+                if (comps.length) {
+                    const setsPerCarton = Number(row.data('pack')) || 0;
+                    comps.forEach(c => {
+                        const childQty = round3(quantity * c.qps);
+                        if (!c.sku_id || childQty <= 0) return;
+                        items.push({
+                            order_item_id: orderItemId,
+                            item_type: 'sku',
+                            sku_id: c.sku_id,
+                            short_name: c.short_name,
+                            quantity: childQty,
+                            unit: c.unit,
+                            pack_quantity: setsPerCarton > 0 ? round3(setsPerCarton * c.qps) : c.pack,
+                            unit_price: c.price,
+                            carton_no: cartonNo
+                        });
+                    });
+                    return;
+                }
+
+                items.push({
+                    order_item_id: orderItemId,
+                    item_type: 'sku',
+                    sku_id: Number(row.data('sku-id')) || null,
+                    short_name: row.data('short-name'),
+                    quantity: quantity,
+                    unit: row.data('unit'),
+                    pack_quantity: Number(row.data('pack')) || 0,
+                    unit_price: Number(row.data('price')) || 0,
+                    carton_no: cartonNo
+                });
+            });
+
+            if (!items.length) { alert('请勾选发货明细并填写数量'); return; }
+
+            const payload = {
+                order_id: orderId,
+                batch_no: Number($('#batchNo').val()) || 1,
+                ship_date: $('#shipDate').val() || null,
+                shipping_method: $('#shippingMethod').val().trim(),
+                carrier: $('#carrier').val().trim(),
+                tracking_no: $('#trackingNo').val().trim(),
+                freight_cost: num('freightCost'),
+                insurance_cost: num('insuranceCost'),
+                currency: $('#currency').val(),
+                status: $('#shipmentStatus').val(),
+                remark: $('#remark').val().trim(),
+                warehouse_code: $('#warehouseCode').val().trim(),
+                po_number: $('#poNumber').val().trim(),
+                customs_mode: $('#customsMode').val().trim(),
+                tax_mode: $('#taxMode').val().trim(),
+                declare_currency: $('#declareCurrency').val(),
+                template_id: Number($('#templateId').val()) || 0,
+                is_electric: $('#isElectric').is(':checked'),
+                is_magnetic: $('#isMagnetic').is(':checked'),
+                is_liquid: $('#isLiquid').is(':checked'),
+                is_powder: $('#isPowder').is(':checked'),
+                is_danger: $('#isDanger').is(':checked'),
+                need_insurance: $('#needInsurance').is(':checked'),
+                items: items
+            };
+
+            $('#saveShipmentBtn').prop('disabled', true).text('保存中...');
+            try {
+                const result = await $.ajax({
+                    url: id ? `${api}/${id}` : api,
+                    method: id ? 'PUT' : 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '保存失败');
+                modal.hide();
+                await loadShipments();
+            } catch (err) {
+                alert(err.responseJSON?.message || err.message || '保存发货单失败');
+            } finally {
+                $('#saveShipmentBtn').prop('disabled', false).text('保存发货单');
+            }
+        });
+
+        // ========================================
+        // 报关资料：按模板装配 → 预览微调 → 下载
+        // ========================================
+
+        $('#shipmentBody').on('click', '.declaration-shipment', async function () {
+            await openDeclaration(Number($(this).data('id')));
+        });
+
+        async function openDeclaration(id) {
+            declShipmentId = id;
+            declDoc = null;
+
+            // 优先用发货单上记录的模板，其次用表单里当前的模板。
+            let templateId = Number($('#templateId').val()) || 0;
+            try {
+                const result = await $.getJSON(`${api}/${id}`);
+                if (result.success && Number(result.data.template_id) > 0) {
+                    templateId = Number(result.data.template_id);
+                }
+            } catch (err) { /* 忽略，回落到表单选择 */ }
+
+            if (templateId) $('#declTemplateId').val(String(templateId));
+            await refreshDeclarationPreview();
+            loadDeclarationRecords();
+            declModal.show();
+        }
+
+        async function refreshDeclarationPreview() {
+            const templateId = $('#declTemplateId').val() || '';
+            $('#declBody').html('<tr><td colspan="8" class="text-center py-4">正在装配报关资料...</td></tr>');
+            $('#declWarnings').addClass('d-none').empty();
+            try {
+                const result = await $.getJSON(`${api}/${declShipmentId}/declaration/preview`, {
+                    template_id: templateId
+                });
+                declDoc = result.data.doc;
+                renderDeclaration();
+            } catch (err) {
+                declDoc = null;
+                $('#declSummary').text('');
+                $('#declBody').html(
+                    `<tr><td colspan="8" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '装配报关资料失败')}</td></tr>`
+                );
+            }
+        }
+
+        function renderDeclaration() {
+            if (!declDoc) return;
+            const d = declDoc;
+
+            $('#declSummary').html(
+                `订单 ${esc(d.order_no || '-')} · 渠道 ${esc(d.service || '-')} · 总箱数 ${qty(d.carton_sum)}` +
+                ` · 地址库编码 ${esc(d.addr_code || '（未填）')}`
+            );
+
+            const warnings = d.warnings || [];
+            if (warnings.length) {
+                $('#declWarnings').removeClass('d-none').html(warnings.map(esc).join('<br>'));
+            } else {
+                $('#declWarnings').addClass('d-none').empty();
+            }
+
+            const lines = d.lines || [];
+            if (!lines.length) {
+                $('#declBody').html('<tr><td colspan="8" class="text-center text-secondary py-4">该发货单没有可报关的产品明细</td></tr>');
+                return;
+            }
+
+            $('#declBody').html(lines.map((l, idx) => `
+                <tr data-idx="${idx}">
+                    <td>
+                        <input type="text" class="form-control form-control-sm decl-carton-no"
+                               value="${esc(l.carton_no || '')}">
+                    </td>
+                    <td>${esc(l.hs_code)}</td>
+                    <td>${esc(l.name_zh)}</td>
+                    <td>${esc(l.name_en)}</td>
+                    <td class="text-end">
+                        <input type="number" class="form-control form-control-sm text-end decl-qty"
+                               min="0" step="0.001" value="${Number(l.quantity || 0)}">
+                    </td>
+                    <td class="text-end">
+                        <input type="number" class="form-control form-control-sm text-end decl-cartons"
+                               min="0" step="1" value="${Number(l.carton_count || 0)}">
+                    </td>
+                    <td class="text-end">${Number(l.declare_price || 0).toFixed(4)}</td>
+                    <td class="text-end">${qty(l.qty_per_carton)}</td>
+                </tr>
+            `).join(''));
+        }
+
+        // collectDeclaration 把预览页上的微调（数量/箱数/货箱编号）收回成待导出的明细行。
+        function collectDeclaration() {
+            if (!declDoc) return [];
+            const lines = [];
+            $('#declBody tr[data-idx]').each(function () {
+                const row = $(this);
+                const idx = Number(row.data('idx'));
+                const base = (declDoc.lines || [])[idx];
+                if (!base) return;
+                lines.push(Object.assign({}, base, {
+                    quantity: Number(row.find('.decl-qty').val()) || 0,
+                    carton_count: Number(row.find('.decl-cartons').val()) || 0,
+                    carton_no: row.find('.decl-carton-no').val().trim()
+                }));
+            });
+            return lines;
+        }
+
+        $('#declTemplateId').on('change', refreshDeclarationPreview);
+
+        // ========================================
+        // 报关资料历史导出记录（留档快照）
+        // ========================================
+
+        let declRecords = [];
+
+        async function loadDeclarationRecords() {
+            const tbody = $('#declRecordBody');
+            tbody.html('<tr><td colspan="6" class="text-center text-secondary py-3">加载中...</td></tr>');
+            try {
+                const result = await $.getJSON(`${api}/${declShipmentId}/declaration/records`, { limit: 20 });
+                declRecords = result.data || [];
+                renderDeclarationRecords();
+            } catch (err) {
+                declRecords = [];
+                tbody.html('<tr><td colspan="6" class="text-danger text-center py-3">加载留档记录失败</td></tr>');
+            }
+        }
+
+        function renderDeclarationRecords() {
+            const tbody = $('#declRecordBody');
+            if (!declRecords.length) {
+                tbody.html('<tr><td colspan="6" class="text-center text-secondary py-3">暂无导出记录</td></tr>');
+                return;
+            }
+            tbody.html(declRecords.map(r => `
+                <tr>
+                    <td class="small">${esc(formatTime(r.created_at))}</td>
+                    <td>${esc(r.template_name || '-')}</td>
+                    <td class="text-end">${Number(r.line_count || 0)}</td>
+                    <td class="text-end">${qty(r.carton_sum)}</td>
+                    <td class="small">${esc(r.file_name || '-')}</td>
+                    <td><button class="btn btn-sm btn-outline-secondary view-record" data-id="${r.id}">查看</button></td>
+                </tr>
+            `).join(''));
+        }
+
+        function formatTime(value) {
+            if (!value) return '-';
+            const d = new Date(value);
+            return isNaN(d.getTime()) ? String(value) : d.toLocaleString('zh-CN', { hour12: false });
+        }
+
+        $('#declRecordRefresh').on('click', loadDeclarationRecords);
+
+        $('#declRecordBody').on('click', '.view-record', function () {
+            const rec = declRecords.find(x => Number(x.id) === Number($(this).data('id')));
+            if (!rec) return;
+            let text = rec.doc || '';
+            try {
+                text = JSON.stringify(JSON.parse(text), null, 2);
+            } catch (err) { /* 保留原文 */ }
+            $('#declRecordTitle').text(`导出快照 — ${rec.template_name || ''} ${formatTime(rec.created_at)}`);
+            $('#declRecordJson').text(text);
+            recordModal.show();
+        });
+
+        $('#exportDeclarationBtn').on('click', async function () {
+            const lines = collectDeclaration();
+            if (!lines.length) { alert('没有可导出的报关明细'); return; }
+
+            $(this).prop('disabled', true).text('生成中...');
+            try {
+                const response = await fetch(`${api}/${declShipmentId}/declaration/export`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        template_id: Number($('#declTemplateId').val()) || 0,
+                        lines: lines
+                    })
+                });
+                if (!response.ok) {
+                    let message = '生成报关资料失败';
+                    try {
+                        const body = await response.json();
+                        message = body.message || message;
+                    } catch (err) { /* 非 JSON 响应 */ }
+                    throw new Error(message);
+                }
+
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+                const filename = match ? decodeURIComponent(match[1]) : 'declaration.xlsx';
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+
+                if (response.headers.get('X-Declaration-Record') === 'failed') {
+                    alert('文件已下载，但这次的报关资料未能写入留档记录，请稍后在「历史导出记录」里核对。');
+                }
+                loadDeclarationRecords();
+            } catch (err) {
+                alert(err.message || '生成报关资料失败');
+            } finally {
+                $(this).prop('disabled', false).text('下载报关资料');
+            }
+        });
+
+        loadDeclarationTemplates();
+        loadWarehouseOptions();
+        loadShipments();
+    });
+</script>
+{{end}}

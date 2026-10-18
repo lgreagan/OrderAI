@@ -1,0 +1,471 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">报关模板</h4>
+            <div class="text-secondary small">
+                货代提供的报关 xls 模板登记在这里；映射（哪个格子写什么）用 JSON 描述，新增模板不必改代码
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-primary" href="/shipments">去发货单生成</a>
+            <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+        </div>
+    </div>
+
+    <div class="alert alert-info border-0 small">
+        模板文件放在 <code>excel/templates/</code> 下（由货代的 <code>.xls</code> 用 Excel「另存为 <code>.xlsx</code>」得到，
+        样式、下拉、辅助表会完整保留）。系统只写「系统里有值」的字段，其余保持模板原样，由业务员在 Excel 里补填。
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-semibold">模板列表</div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>名称</th>
+                            <th>国家</th>
+                            <th>运输</th>
+                            <th>模板文件</th>
+                            <th>明细起始行</th>
+                            <th>明细列数</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="templateBody">
+                        <tr><td colspan="8" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold">仓库地址库（FBA）</div>
+        <div class="card-body">
+            <div class="row g-2 mb-3">
+                <div class="col-lg-4">
+                    <input id="whKeyword" class="form-control" placeholder="搜索地址简称、编码、城市、地址">
+                </div>
+                <div class="col-lg-3">
+                    <select id="whCountry" class="form-select">
+                        <option value="">全部国家</option>
+                    </select>
+                </div>
+                <div class="col-lg-3">
+                    <select id="whLimit" class="form-select">
+                        <option value="50">显示 50 条</option>
+                        <option value="200" selected>显示 200 条</option>
+                        <option value="1000">显示 1000 条</option>
+                    </select>
+                </div>
+                <div class="col-lg-2 d-flex gap-2">
+                    <button class="btn btn-primary" id="whSearchBtn">搜索</button>
+                    <button class="btn btn-outline-primary" id="whNewBtn">新增</button>
+                </div>
+            </div>
+            <div class="text-secondary small mb-2">
+                发货单上的「地址库编码」填这里的<b>地址简称</b>（如 <code>BHX4</code>），生成报关资料时会自动带出收件人信息。
+                「报关附注」是多行文本（如 <code>Anmelder: POLZEN LTD</code> 整段），会拼在收件人地址一的最前面。
+            </div>
+            <div class="table-responsive" style="max-height: 460px; overflow:auto;">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                        <tr>
+                            <th>简称</th>
+                            <th>联系人</th>
+                            <th>地址一</th>
+                            <th>城市</th>
+                            <th>省/州</th>
+                            <th>国家</th>
+                            <th>邮编</th>
+                            <th>报关附注</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="whBody">
+                        <tr><td colspan="9" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="small text-secondary" id="whCount"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="mappingModalTitle">编辑模板映射</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2 small text-secondary">
+                    <code>header</code> 是抬头「语义字段 → 单元格」，<code>detail.firstDataRow / sampleRows</code> 是明细起始行与
+                    模板自带样例行范围，<code>detail.columns</code> 是「语义列 → 列字母」。
+                </div>
+                <textarea class="form-control font-monospace" id="mappingText" rows="20"
+                          style="font-size: 12px;"></textarea>
+                <div class="text-danger small mt-2" id="mappingError"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" id="formatMappingBtn">格式化</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveMappingBtn">保存映射</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="warehouseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="warehouseModalTitle">编辑仓库地址</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">地址简称 *</label>
+                        <input class="form-control" id="whShortName" maxlength="100" placeholder="如 BHX4">
+                        <div class="form-text">发货单「地址库编码」填这里</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">地址编码</label>
+                        <input class="form-control" id="whCode" maxlength="50">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">FBA 仓库代码</label>
+                        <input class="form-control" id="whFbaCode" maxlength="50">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">收件人姓名</label>
+                        <input class="form-control" id="whContact" maxlength="100">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">收件人公司</label>
+                        <input class="form-control" id="whCompany" maxlength="200">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">VAT / EORI</label>
+                        <input class="form-control" id="whVatNo" maxlength="50">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">电话</label>
+                        <input class="form-control" id="whTel" maxlength="50">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">手机</label>
+                        <input class="form-control" id="whMobile" maxlength="50">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">地址一</label>
+                        <input class="form-control" id="whAddress1" maxlength="300">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">地址二</label>
+                        <input class="form-control" id="whAddress2" maxlength="300">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">地址三</label>
+                        <input class="form-control" id="whAddress3" maxlength="300">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">城市</label>
+                        <input class="form-control" id="whCity" maxlength="100">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">省 / 州</label>
+                        <input class="form-control" id="whState" maxlength="100">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">国家代码</label>
+                        <input class="form-control" id="whZipCountry" maxlength="50" placeholder="如 GB">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">邮编</label>
+                        <input class="form-control" id="whZip" maxlength="30">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">状态</label>
+                        <select class="form-select" id="whStatus">
+                            <option value="active">启用</option>
+                            <option value="inactive">停用</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">报关附注（多行）</label>
+                        <textarea class="form-control" id="whDeclareExtra" rows="5"
+                                  placeholder="如 Anmelder: POLZEN LTD&#10;Amazon Services KS Europe S.a.r.l."></textarea>
+                        <div class="form-text">生成报关资料时，这段文字会拼在「收件人地址一」的最前面（模板里的申报说明块）。</div>
+                    </div>
+                </div>
+                <div class="text-danger small mt-3" id="whError"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveWarehouseBtn">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const tplApi = '/api/declaration-templates';
+        const whApi = '/api/warehouse-addresses';
+        const modal = new bootstrap.Modal(document.getElementById('mappingModal'));
+        const whModal = new bootstrap.Modal(document.getElementById('warehouseModal'));
+        let templates = [];
+        let editingId = 0;
+        let warehouses = [];
+        let editingWarehouseId = 0;
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function mappingOf(t) {
+            try { return JSON.parse(t.mapping || '{}'); } catch (e) { return {}; }
+        }
+
+        // 名称统一取模板登记名 declaration_templates.name（列表「名称」列与映射弹窗标题一致）
+        function templateName(t) {
+            return t.name || '';
+        }
+
+        function loadTemplates() {
+            $.get(tplApi).done(res => {
+                templates = (res && res.data) || [];
+                renderTemplates();
+            }).fail(xhr => {
+                alert((xhr.responseJSON && xhr.responseJSON.message) || '加载报关模板失败');
+            });
+        }
+
+        function renderTemplates() {
+            const tbody = $('#templateBody');
+            tbody.empty();
+
+            if (!templates.length) {
+                tbody.html('<tr><td colspan="8" class="text-center text-secondary py-4">暂无报关模板</td></tr>');
+                return;
+            }
+
+            templates.forEach(t => {
+                const m = mappingOf(t);
+                const name = templateName(t);
+                const firstRow = (m.detail && m.detail.firstDataRow) || 0;
+                const colCount = (m.detail && m.detail.columns) ? Object.keys(m.detail.columns).length : 0;
+                const status = t.status === 'active'
+                    ? '<span class="badge text-bg-success">启用</span>'
+                    : '<span class="badge text-bg-secondary">停用</span>';
+                tbody.append(`
+                    <tr>
+                        <td class="fw-semibold">${esc(name)}</td>
+                        <td>${esc(t.country)}</td>
+                        <td>${esc(t.carrier)}${t.ship_type ? ' / ' + esc(t.ship_type) : ''}</td>
+                        <td class="small">${esc(t.file_path)}</td>
+                        <td>${firstRow}</td>
+                        <td>${colCount}</td>
+                        <td>${status}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary edit-mapping" data-id="${t.id}">编辑映射</button>
+                        </td>
+                    </tr>
+                `);
+            });
+        }
+
+        function openMapping(id) {
+            const t = templates.find(x => Number(x.id) === Number(id));
+            if (!t) return;
+            editingId = id;
+            $('#mappingModalTitle').text('编辑模板映射 — ' + templateName(t));
+            $('#mappingError').text('');
+            let text = t.mapping || '';
+            try { text = JSON.stringify(JSON.parse(text), null, 2); } catch (e) { /* 保留原文 */ }
+            $('#mappingText').val(text);
+            modal.show();
+        }
+
+        function loadCountries() {
+            $.get(whApi + '/countries').done(res => {
+                const sel = $('#whCountry');
+                ((res && res.data) || []).forEach(c => {
+                    sel.append(`<option value="${esc(c)}">${esc(c)}</option>`);
+                });
+            });
+        }
+
+        function loadWarehouses() {
+            $.get(whApi, {
+                keyword: $('#whKeyword').val(),
+                country: $('#whCountry').val(),
+                limit: $('#whLimit').val()
+            }).done(res => {
+                warehouses = (res && res.data) || [];
+                renderWarehouses();
+            }).fail(xhr => {
+                alert((xhr.responseJSON && xhr.responseJSON.message) || '加载仓库地址失败');
+            });
+        }
+
+        function renderWarehouses() {
+            const tbody = $('#whBody');
+            tbody.empty();
+            if (!warehouses.length) {
+                tbody.html('<tr><td colspan="9" class="text-center text-secondary py-4">没有匹配的仓库地址</td></tr>');
+                $('#whCount').text('共 0 条');
+                return;
+            }
+            warehouses.forEach(a => {
+                const extra = a.declare_extra
+                    ? `<span class="d-inline-block text-truncate" style="max-width:220px"
+                             title="${esc(a.declare_extra)}">${esc(a.declare_extra.split('\n')[0])}</span>`
+                    : '<span class="text-secondary">（空）</span>';
+                tbody.append(`
+                    <tr>
+                        <td class="fw-semibold">${esc(a.short_name)}</td>
+                        <td>${esc(a.contact)}</td>
+                        <td class="small">${esc(a.address1)}</td>
+                        <td>${esc(a.city)}</td>
+                        <td>${esc(a.state)}</td>
+                        <td>${esc(a.country)}</td>
+                        <td>${esc(a.zip)}</td>
+                        <td class="small">${extra}</td>
+                        <td class="text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary edit-warehouse"
+                                    data-id="${a.id}">编辑</button>
+                        </td>
+                    </tr>
+                `);
+            });
+            $('#whCount').text(`共 ${warehouses.length} 条`);
+        }
+
+        function openWarehouse(id) {
+            const a = id ? warehouses.find(x => Number(x.id) === Number(id)) : null;
+            if (id && !a) return;
+            editingWarehouseId = a ? Number(a.id) : 0;
+
+            $('#warehouseModalTitle').text(a ? '编辑仓库地址 — ' + a.short_name : '新增仓库地址');
+            $('#whError').text('');
+            $('#whShortName').val(a ? a.short_name : '');
+            $('#whCode').val(a ? a.code : '');
+            $('#whFbaCode').val(a ? a.fba_code : '');
+            $('#whContact').val(a ? a.contact : '');
+            $('#whCompany').val(a ? a.company : '');
+            $('#whVatNo').val(a ? a.vat_no : '');
+            $('#whTel').val(a ? a.tel : '');
+            $('#whMobile').val(a ? a.mobile : '');
+            $('#whAddress1').val(a ? a.address1 : '');
+            $('#whAddress2').val(a ? a.address2 : '');
+            $('#whAddress3').val(a ? a.address3 : '');
+            $('#whCity').val(a ? a.city : '');
+            $('#whState').val(a ? a.state : '');
+            $('#whZipCountry').val(a ? a.country : '');
+            $('#whZip').val(a ? a.zip : '');
+            $('#whStatus').val(a ? (a.status || 'active') : 'active');
+            $('#whDeclareExtra').val(a ? (a.declare_extra || '') : '');
+            whModal.show();
+        }
+
+        function collectWarehouse() {
+            const val = id => $('#' + id).val().trim();
+            return {
+                short_name: val('whShortName'),
+                code: val('whCode'),
+                fba_code: val('whFbaCode'),
+                contact: val('whContact'),
+                company: val('whCompany'),
+                vat_no: val('whVatNo'),
+                tel: val('whTel'),
+                mobile: val('whMobile'),
+                address1: val('whAddress1'),
+                address2: val('whAddress2'),
+                address3: val('whAddress3'),
+                city: val('whCity'),
+                state: val('whState'),
+                country: val('whZipCountry'),
+                zip: val('whZip'),
+                status: $('#whStatus').val(),
+                declare_extra: $('#whDeclareExtra').val().trim()
+            };
+        }
+
+        $('#refreshBtn').on('click', loadTemplates);
+        $('#templateBody').on('click', '.edit-mapping', function () { openMapping($(this).data('id')); });
+        $('#whSearchBtn').on('click', loadWarehouses);
+        $('#whKeyword').on('keydown', e => { if (e.key === 'Enter') loadWarehouses(); });
+        $('#whCountry').on('change', loadWarehouses);
+        $('#whLimit').on('change', loadWarehouses);
+        $('#whNewBtn').on('click', () => openWarehouse(0));
+        $('#whBody').on('click', '.edit-warehouse', function () { openWarehouse($(this).data('id')); });
+
+        $('#saveWarehouseBtn').on('click', function () {
+            const payload = collectWarehouse();
+            if (!payload.short_name) {
+                $('#whError').text('地址简称不能为空');
+                return;
+            }
+
+            $(this).prop('disabled', true);
+            $.ajax({
+                url: editingWarehouseId ? whApi + '/' + editingWarehouseId : whApi,
+                type: editingWarehouseId ? 'PUT' : 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(payload)
+            }).done(() => {
+                whModal.hide();
+                loadWarehouses();
+            }).fail(xhr => {
+                $('#whError').text((xhr.responseJSON && xhr.responseJSON.message) || '保存失败');
+            }).always(() => {
+                $('#saveWarehouseBtn').prop('disabled', false);
+            });
+        });
+
+        $('#formatMappingBtn').on('click', function () {
+            try {
+                $('#mappingText').val(JSON.stringify(JSON.parse($('#mappingText').val()), null, 2));
+                $('#mappingError').text('');
+            } catch (e) {
+                $('#mappingError').text('JSON 格式错误：' + e.message);
+            }
+        });
+
+        $('#saveMappingBtn').on('click', function () {
+            const text = $('#mappingText').val();
+            try {
+                JSON.parse(text);
+            } catch (e) {
+                $('#mappingError').text('JSON 格式错误：' + e.message);
+                return;
+            }
+            $.ajax({
+                url: tplApi + '/' + editingId + '/mapping',
+                type: 'PUT',
+                contentType: 'application/json',
+                data: JSON.stringify({ mapping: text })
+            }).done(() => {
+                modal.hide();
+                loadTemplates();
+            }).fail(xhr => {
+                $('#mappingError').text((xhr.responseJSON && xhr.responseJSON.message) || '保存失败');
+            });
+        });
+
+        loadTemplates();
+        loadCountries();
+        loadWarehouses();
+    });
+</script>
+{{end}}

@@ -1,0 +1,277 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">系统设置</h4>
+            <div class="text-secondary small">业务默认值与运行时信息</div>
+        </div>
+        <button class="btn btn-primary" id="saveSettingsBtn">保存设置</button>
+    </div>
+
+    <div id="messageArea"></div>
+
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h6 class="mb-3">业务默认值</h6>                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">默认币种</label>
+                            <select class="form-select setting-field" data-key="default_currency">
+                                <option value="USD">USD 美元</option>
+                                <option value="CNY">CNY 人民币</option>
+                                <option value="EUR">EUR 欧元</option>
+                                <option value="GBP">GBP 英镑</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">默认仓库</label>
+                            <input class="form-control setting-field" data-key="default_warehouse" maxlength="50">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">PI 有效期（天）</label>
+                            <input type="number" class="form-control setting-field" data-key="pi_valid_days" min="0" step="1">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">低库存阈值</label>
+                            <input type="number" class="form-control setting-field" data-key="low_stock_threshold" min="0" step="1">
+                            <div class="form-text">库存大于 0 且不超过该值时，在数据统计中列为低库存。</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">默认汇率（1 外币 = N CNY）</label>
+                            <input type="number" class="form-control setting-field" data-key="exchange_rate" min="0" step="0.01" value="7.1">
+                            <div class="form-text">财务报表优先取 PI 签发月份的「月度汇率」，该月未维护时用这里的默认值。</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">库存说明默认抬头</label>
+                            <input class="form-control setting-field" data-key="stock_note_header" maxlength="255">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">PI 付款条款（打印在 PI Excel 底部）</label>
+                            <textarea class="form-control setting-field" data-key="pi_terms" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mt-3">
+                <div class="card-body">
+                    <h6 class="mb-1">月度汇率</h6>
+                    <div class="text-secondary small mb-3">
+                        财务报表按 PI 的签发月份取当月汇率折算人民币，跨月对比不会串用汇率。
+                        这里维护每个月使用的汇率，未维护的月份回落到上面的「默认汇率」。
+                    </div>
+
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-6 col-md-4">
+                            <label class="form-label small mb-1">月份</label>
+                            <input type="month" class="form-control form-control-sm" id="rateMonth" placeholder="年-月，例如 2026-10">
+                            <div class="form-text small">填完整年月，例如 2026-10</div>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <label class="form-label small mb-1">汇率（1 外币 = N CNY）</label>
+                            <input type="number" class="form-control form-control-sm" id="rateValue" min="0" step="0.01" placeholder="例如 7.05">
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <button class="btn btn-sm btn-primary w-100" id="saveRateBtn">保存该月汇率</button>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive" style="max-height:260px;overflow:auto">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>月份</th>
+                                    <th class="text-end">汇率</th>
+                                    <th class="text-end" style="width:76px">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rateBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h6 class="mb-3">运行时信息（只读）</h6>
+                    <table class="table table-sm mb-0">
+                        <tbody id="sysInfoBody">
+                            <tr><td class="text-secondary">正在加载...</td></tr>
+                        </tbody>
+                    </table>
+                    <div class="form-text mt-2">数据库与端口配置来自项目根目录 <code>.env</code>。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $(function () {
+        const RATE_KEY = /^exchange_rate_(\d{4}-\d{2})$/;
+        const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+        let monthlyRates = {};
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function showMessage(text, type) {
+            $('#messageArea').html(`<div class="alert alert-${type || 'success'}">${esc(text)}</div>`);
+            setTimeout(() => $('#messageArea').empty(), 3000);
+        }
+
+        function renderMonthlyRates() {
+            const months = Object.keys(monthlyRates).sort().reverse();
+            if (!months.length) {
+                $('#rateBody').html(
+                    '<tr><td colspan="3" class="text-center text-secondary py-3">尚未维护月度汇率，所有月份按默认汇率折算</td></tr>'
+                );
+                return;
+            }
+
+            $('#rateBody').html(months.map(month => `
+                <tr>
+                    <td class="fw-semibold">${esc(month)}</td>
+                    <td class="text-end">${esc(monthlyRates[month])}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-danger delRateBtn" data-month="${esc(month)}">删除</button>
+                    </td>
+                </tr>`).join(''));
+        }
+
+        async function loadSettings() {
+            try {
+                const result = await $.getJSON('/api/settings');
+                if (!result.success) throw new Error(result.message || '读取设置失败');
+
+                const map = {};
+                monthlyRates = {};
+                (result.data || []).forEach(s => {
+                    const matched = RATE_KEY.exec(s.key);
+                    if (matched) {
+                        monthlyRates[matched[1]] = s.value;
+                        return;
+                    }
+                    map[s.key] = s.value;
+                });
+
+                $('.setting-field').each(function () {
+                    const key = $(this).data('key');
+                    if (map[key] !== undefined) $(this).val(map[key]);
+                });
+
+                renderMonthlyRates();
+            } catch (err) {
+                $('#messageArea').html(`<div class="alert alert-danger">${esc(err.responseJSON?.message || err.message || '读取设置失败')}</div>`);
+            }
+        }
+
+        async function saveSettings(payload, successText) {
+            const result = await $.ajax({
+                url: '/api/settings',
+                method: 'PUT',
+                contentType: 'application/json',
+                data: JSON.stringify(payload),
+                dataType: 'json'
+            });
+            if (!result.success) throw new Error(result.message || '保存失败');
+            showMessage(successText, 'success');
+            await loadSettings();
+        }
+
+        async function loadSystemInfo() {
+            try {
+                const result = await $.getJSON('/api/system-info');
+                const d = result.data || {};
+                const rows = [
+                    ['应用', d.app_name],
+                    ['服务端口', d.app_port],
+                    ['Go 版本', d.go_version],
+                    ['运行平台', `${d.server_os}/${d.server_arch}`],
+                    ['数据库主机', d.db_host],
+                    ['数据库端口', d.db_port],
+                    ['数据库名', d.db_name],
+                    ['数据库用户', d.db_user]
+                ];
+                $('#sysInfoBody').html(rows.map(([k, v]) =>
+                    `<tr><td class="text-secondary">${esc(k)}</td><td class="fw-semibold">${esc(v)}</td></tr>`
+                ).join(''));
+            } catch (err) {
+                $('#sysInfoBody').html('<tr><td class="text-danger">读取失败</td></tr>');
+            }
+        }
+
+        $('#saveSettingsBtn').on('click', async function () {
+            const payload = {};
+            $('.setting-field').each(function () {
+                payload[$(this).data('key')] = $(this).val();
+            });
+
+            $(this).prop('disabled', true).text('保存中...');
+            try {
+                await saveSettings(payload, '设置已保存');
+            } catch (err) {
+                showMessage(err.responseJSON?.message || err.message || '保存设置失败', 'danger');
+            } finally {
+                $(this).prop('disabled', false).text('保存设置');
+            }
+        });
+
+        $('#saveRateBtn').on('click', async function () {
+            const month = $('#rateMonth').val();
+            const value = $('#rateValue').val();
+
+            if (!MONTH_PATTERN.test(month)) {
+                showMessage('请选择月份（格式：年-月，例如 2026-10）', 'warning');
+                return;
+            }
+            if (!(Number(value) > 0)) {
+                showMessage('请输入大于 0 的汇率', 'warning');
+                return;
+            }
+
+            const payload = {};
+            payload['exchange_rate_' + month] = value;
+
+            $(this).prop('disabled', true).text('保存中...');
+            try {
+                await saveSettings(payload, `${month} 的汇率已保存为 ${value}`);
+                $('#rateMonth,#rateValue').val('');
+            } catch (err) {
+                showMessage(err.responseJSON?.message || err.message || '保存汇率失败', 'danger');
+            } finally {
+                $(this).prop('disabled', false).text('保存该月汇率');
+            }
+        });
+
+        $('#rateBody').on('click', '.delRateBtn', async function () {
+            const month = $(this).data('month');
+            if (!confirm(`确定删除 ${month} 的汇率？删除后该月按默认汇率折算。`)) return;
+
+            $(this).prop('disabled', true);
+            try {
+                const result = await $.ajax({
+                    url: '/api/settings/' + encodeURIComponent('exchange_rate_' + month),
+                    method: 'DELETE',
+                    dataType: 'json'
+                });
+                if (!result.success) throw new Error(result.message || '删除失败');
+                showMessage(`${month} 的汇率已删除`, 'success');
+                await loadSettings();
+            } catch (err) {
+                showMessage(err.responseJSON?.message || err.message || '删除汇率失败', 'danger');
+                $(this).prop('disabled', false);
+            }
+        });
+
+        loadSettings();
+        loadSystemInfo();
+    });
+</script>
+{{end}}
