@@ -290,8 +290,9 @@ func writePIBody(
 		row++
 	}
 
-	for _, it := range filterItems(pi.Items, models.PIItemBox) {
-		writeSummaryRow(f, sheet, row, "box cost", it.Amount, st, false)
+	// 箱费只汇总成一行总价，不按明细逐条列出。
+	if boxAmount := sumUnpaidAmount(filterItems(pi.Items, models.PIItemBox)); boxAmount != 0 {
+		writeSummaryRow(f, sheet, row, "box cost", boxAmount, st, false)
 		row++
 	}
 
@@ -720,6 +721,18 @@ func groupPIItems(items []models.ProformaInvoiceItem) []piGroup {
 		}
 	}
 	return groups
+}
+
+// sumUnpaidAmount 汇总未付款行的金额（与 recalcTotals 的口径一致）。
+func sumUnpaidAmount(items []models.ProformaInvoiceItem) float64 {
+	var total float64
+	for _, it := range items {
+		if it.IsPaid {
+			continue
+		}
+		total += it.Amount
+	}
+	return round2(total)
 }
 
 func filterItems(
