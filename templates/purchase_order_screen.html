@@ -64,6 +64,8 @@
         /* 产品名列吸收剩余宽度，窄窗口下也不会被固定列挤扁。   th.wide { width: 100%; } */
      
         tr.total td { font-weight: 700; background: #fafbfe; font-size: 14px; }
+        /* 系列/版本小计行：夹在明细中间，颜色略深以便一眼区分。 */
+        tr.subtotal td { background: #f5f7fe; font-weight: 600; color: #3b4fd8; }
         h2 { font-size: 15px; margin: 18px 0 8px; color: var(--brand); }
         .cell-name { font-weight: 600; }
         .note { margin-top: 10px; color: var(--muted); font-size: 12px; }
@@ -143,6 +145,39 @@
         return String(name).indexOf(model) === 0 ? String(name).slice(model.length) : '';
     }
 
+    // 系列/版本排序：V1、V2…这类版本号排最前（按数字大小），其余系列按字母序，空值固定排最后。
+    function seriesCompare(a, b) {
+        a = a || ''; b = b || '';
+        if (!a && !b) return 0;
+        if (!a) return 1;
+        if (!b) return -1;
+        var va = /^V\d+$/i.test(a), vb = /^V\d+$/i.test(b);
+        if (va !== vb) return va ? -1 : 1;
+        if (va) return parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10);
+        return a < b ? -1 : (a > b ? 1 : 0);
+    }
+    function seriesOf(it) {
+        var sku = it.item_id ? SKUS[it.item_id] : null;
+        return sku && sku.series ? String(sku.series).trim() : '';
+    }
+    // 同系列的行连续排列，组尾才好放一行小计；组内保持单据原顺序。
+    function groupBySeries(items) {
+        var sorted = items.slice().sort(function (x, y) {
+            return seriesCompare(seriesOf(x), seriesOf(y));
+        });
+        var groups = [];
+        sorted.forEach(function (it) {
+            var s = seriesOf(it);
+            var last = groups[groups.length - 1];
+            if (!last || last.series !== s) {
+                last = { series: s, items: [] };
+                groups.push(last);
+            }
+            last.items.push(it);
+        });
+        return groups;
+    }
+
     async function load() {
         var sheet = document.getElementById('sheet');
         try {
@@ -179,6 +214,43 @@
         return attrs + (extra || '');
     }
 
+    // 系列小计行：8 列 = 勾选 + (序号/名称/型号/颜色) + 数量 + 单价 + 金额。
+    function seriesSubtotalRow(series) {
+        return '<tr class="subtotal" data-series="' + esc(series) + '">'
+            + '<td class="pick-col"></td>'
+            + '<td colspan="4" data-role="sub-label">' + esc((series || '未分系列') + ' 小计') + '</td>'
+            + '<td class="num" data-role="sub-qty">0</td>'
+            + '<td></td>'
+            + '<td class="num" data-role="sub-amount">0.00</td>'
+            + '</tr>';
+    }
+
+    // 小计只统计当前可见行：隐藏掉的行不该出现在给厂家的数量里；整组隐藏则小计一起隐藏。
+    function updateSeriesSubtotals(rows) {
+        var stat = {};
+        rows.forEach(function (tr) {
+            if (isHidden(tr)) return;
+            var s = tr.getAttribute('data-series') || '';
+            var g = stat[s] || (stat[s] = { count: 0, qty: 0, amount: 0 });
+            g.count += 1;
+            g.qty += Number(tr.getAttribute('data-qty') || 0);
+            g.amount += Number(tr.getAttribute('data-amount') || 0);
+        });
+
+        Array.prototype.slice.call(document.querySelectorAll('#productBody tr.subtotal')).forEach(function (tr) {
+            var s = tr.getAttribute('data-series') || '';
+            var g = stat[s] || { count: 0, qty: 0, amount: 0 };
+            tr.classList.toggle('row-hidden', g.count === 0);
+
+            var label = tr.querySelector('[data-role="sub-label"]');
+            if (label) label.textContent = (s || '未分系列') + ' 小计（' + g.count + ' 项）';
+            var qEl = tr.querySelector('[data-role="sub-qty"]');
+            if (qEl) qEl.textContent = qty(g.qty);
+            var aEl = tr.querySelector('[data-role="sub-amount"]');
+            if (aEl) aEl.textContent = money(g.amount);
+        });
+    }
+
     function render(po, order) {
         var items = po.items || [];
         // 产品与材料分列，避免混在一起。
@@ -187,28 +259,44 @@
 
         var prodQty = 0, prodAmount = 0, matQty = 0, matAmount = 0;
 
-        var productRows = products.map(function (it, i) {
-            var sku = it.item_id ? SKUS[it.item_id] : null;
-            var name = (sku && sku.product_name_zh) || it.item_name || '';
-            var model = (sku && sku.model) || it.spec || '';
-            var color = (sku && sku.color) || stripModel(name, model);
-            var quantity = Number(it.quantity || 0);
-            var amount = Number(it.amount || 0);
+        // 产品按系列/版本分组：同组连续排列，组尾插一行小计；数字随隐藏行实时重算。
+        var productRows = '';
+        if (!products.length) {
+            productRows = '<tr><td colspan="8" class="empty">无产品明细</td></tr>';
+        }
+        var prodGroups = groupBySeries(products);
+        var prodIndex = 0;
 
-            prodQty += quantity;
-            prodAmount += amount;
+        prodGroups.forEach(function (grp) {
+            grp.items.forEach(function (it) {
+                var sku = it.item_id ? SKUS[it.item_id] : null;
+                var name = (sku && sku.product_name_zh) || it.item_name || '';
+                var model = (sku && sku.model) || it.spec || '';
+                var color = (sku && sku.color) || stripModel(name, model);
+                var quantity = Number(it.quantity || 0);
+                var amount = Number(it.amount || 0);
 
-            return '<tr' + rowAttrs('product', quantity, amount) + '>'
-                + pickCell()
-                + '<td class="ctr row-no">' + (i + 1) + '</td>'
-                + '<td class="cell-name">' + esc(name) + '</td>'
-                + '<td>' + esc(model) + '</td>'
-                + '<td>' + esc(color) + '</td>'
-                + '<td class="num">' + qty(quantity) + '</td>'
-                + '<td class="num">' + money(it.unit_price) + '</td>'
-                + '<td class="num">' + money(amount) + '</td>'
-                + '</tr>';
-        }).join('');
+                prodQty += quantity;
+                prodAmount += amount;
+                prodIndex += 1;
+
+                productRows += '<tr' + rowAttrs('product', quantity, amount)
+                    + ' data-series="' + esc(grp.series) + '">'
+                    + pickCell()
+                    + '<td class="ctr row-no">' + prodIndex + '</td>'
+                    + '<td class="cell-name">' + esc(name) + '</td>'
+                    + '<td>' + esc(model) + '</td>'
+                    + '<td>' + esc(color) + '</td>'
+                    + '<td class="num">' + qty(quantity) + '</td>'
+                    + '<td class="num">' + money(it.unit_price) + '</td>'
+                    + '<td class="num">' + money(amount) + '</td>'
+                    + '</tr>';
+            });
+            // 只有一个系列时小计与表尾合计重复，不插。
+            if (prodGroups.length > 1) {
+                productRows += seriesSubtotalRow(grp.series);
+            }
+        });
 
         var materialRows = materials.map(function (it, i) {
             var quantity = Number(it.quantity || 0);
@@ -231,9 +319,6 @@
                 + '</tr>';
         }).join('');
 
-        if (!products.length) {
-            productRows = '<tr><td colspan="8" class="empty">无产品明细</td></tr>';
-        }
         if (!materials.length) {
             materialRows = '<tr><td colspan="7" class="empty">无材料明细</td></tr>';
         }
@@ -456,6 +541,9 @@
             if (showBtn) showBtn.disabled = hiddenCount === 0;
 
             goods += amountSum;
+
+            // 系列小计跟着可见行走：隐藏明细行后小计同步变化。
+            if (t.kind === 'product') updateSeriesSubtotals(rows);
         });
 
         var goodsEl = document.getElementById('noteGoods');

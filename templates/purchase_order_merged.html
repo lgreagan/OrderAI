@@ -99,6 +99,8 @@
         td.num, th.num { text-align: right; white-space: nowrap; }
         td.ctr, th.ctr { text-align: center; white-space: nowrap; }
         tr.total td { font-weight: 700; background: #fafbfe; }
+        /* 系列/版本小计行：夹在合并行之间，颜色略深便于区分。 */
+        tr.subtotal td { background: #f5f7fe; font-weight: 600; color: #3b4fd8; }
         .cell-name { font-weight: 600; }
         .empty { padding: 22px; text-align: center; color: var(--muted); }
         tr.row-hidden { display: none; }
@@ -175,6 +177,18 @@
         return String(name).indexOf(model) === 0 ? String(name).slice(model.length) : '';
     }
 
+    // 系列/版本排序：V1、V2…这类版本号排最前（按数字大小），其余系列按字母序，空值固定排最后。
+    function seriesCompare(a, b) {
+        a = a || ''; b = b || '';
+        if (!a && !b) return 0;
+        if (!a) return 1;
+        if (!b) return -1;
+        var va = /^V\d+$/i.test(a), vb = /^V\d+$/i.test(b);
+        if (va !== vb) return va ? -1 : 1;
+        if (va) return parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10);
+        return a < b ? -1 : (a > b ? 1 : 0);
+    }
+
     async function load() {
         var sheet = document.getElementById('sheet');
         if (!PO_IDS.length) {
@@ -211,6 +225,7 @@
             name: name,
             model: model,
             color: (sku && sku.color) || stripModel(name, model),
+            series: (sku && sku.series) ? String(sku.series).trim() : '',
             currency: currency,
             qty: Number(it.quantity || 0),
             price: Number(it.unit_price || 0),
@@ -362,9 +377,23 @@
         return '<td class="num" title="' + esc(tip) + '">' + text + ccy + '</td>';
     }
 
+    // 系列小计行：与产品表 9 列对齐（勾选 + 序号 + 名称/型号/颜色 + 数量 + 单价 + 金额 + 单据数）。
+    function mergedSubtotalRow(label, stat, cellsWidth, hidden) {
+        return '<tr class="subtotal' + (hidden ? ' row-hidden' : '') + '" data-sub="' + esc(label) + '">'
+            + '<td class="pick-col"></td>'
+            + '<td colspan="' + (cellsWidth + 1) + '">'
+            + esc(label + ' 小计（' + stat.count + ' 项）') + '</td>'
+            + '<td class="num">' + qty(stat.qty) + '</td>'
+            + '<td></td>'
+            + '<td class="num">' + money(stat.amount) + '</td>'
+            + '<td></td>'
+            + '</tr>';
+    }
+
     // 合并清单中的一张表：按可见行重排序号、只累加可见行，并恢复上次的显隐与勾选。
+    // groupOf 传入时按组插小计行（产品按系列/版本），组内全隐藏则小计一起隐藏。
     // 返回本表可见合计，供顶部汇总使用。
-    function fillTable(tableId, list, cells, qtyRole, amountRole) {
+    function fillTable(tableId, list, cells, qtyRole, amountRole, groupOf) {
         var table = document.getElementById(tableId);
         if (!table) return { qty: 0, amount: 0 };
 
@@ -373,10 +402,31 @@
         var pickBag = pickedMerge[tableId] || (pickedMerge[tableId] = {});
         var qtySum = 0, amountSum = 0, shown = 0, picked = 0;
 
+        // 组数 > 1 才插小计：只有一个系列时小计和表尾合计重复。
+        var groups = {};
+        if (groupOf) {
+            list.forEach(function (g) { groups[groupOf(g).key] = true; });
+        }
+        var showSub = !!groupOf && Object.keys(groups).length > 1;
+
+        // 每组可见合计先算好，插到组尾那一行后面。
+        var groupStat = {};
+        if (showSub) {
+            list.forEach(function (g) {
+                if (hiddenBag[g.key]) return;
+                var grp = groupOf(g);
+                var st = groupStat[grp.key] || (groupStat[grp.key] = { count: 0, qty: 0, amount: 0 });
+                st.count += 1;
+                st.qty += g.qty;
+                st.amount += g.amount;
+            });
+        }
+
         if (!list.length) {
             tbody.innerHTML = '<tr><td colspan="' + (cells.length + 6) + '" class="empty">暂无数据</td></tr>';
         } else {
-            tbody.innerHTML = list.map(function (g) {
+            var html = '';
+            list.forEach(function (g, idx) {
                 var hidden = !!hiddenBag[g.key];
                 var isPicked = !hidden && !!pickBag[g.key];
                 if (hidden) {
@@ -388,7 +438,7 @@
                     if (isPicked) picked += 1;
                 }
                 var posCount = Object.keys(g.pos).length;
-                return '<tr data-key="' + esc(g.key) + '" data-qty="' + g.qty + '" data-amount="' + g.amount + '"'
+                html += '<tr data-key="' + esc(g.key) + '" data-qty="' + g.qty + '" data-amount="' + g.amount + '"'
                     + (hidden ? ' class="row-hidden"' : '') + '>'
                     + '<td class="ctr pick-col"><input type="checkbox" class="row-pick"'
                     + (isPicked ? ' checked' : '') + '></td>'
@@ -399,12 +449,22 @@
                     + '<td class="num">' + money(g.amount) + '</td>'
                     + '<td class="num">' + posCount + '</td>'
                     + '</tr>';
-            }).join('');
+
+                if (showSub) {
+                    var grp = groupOf(g);
+                    var next = list[idx + 1];
+                    if (!next || groupOf(next).key !== grp.key) {
+                        var st = groupStat[grp.key] || { count: 0, qty: 0, amount: 0 };
+                        html += mergedSubtotalRow(grp.label, st, cells.length, st.count === 0);
+                    }
+                }
+            });
             // 全部行都被隐藏时给个占位提示，否则表格看起来像坏了。
             if (shown === 0) {
-                tbody.innerHTML += '<tr><td colspan="' + (cells.length + 6) + '" class="empty">'
+                html += '<tr><td colspan="' + (cells.length + 6) + '" class="empty">'
                     + '全部行已隐藏，点「显示全部」恢复</td></tr>';
             }
+            tbody.innerHTML = html;
         }
 
         var qtyEl = table.querySelector('[data-role="' + qtyRole + '"]');
@@ -443,20 +503,36 @@
         });
     }
 
+    // 小计按系列/版本分组；多币种时同系列不同币种分开算，不跨币种相加。
+    function productGroup(g) {
+        var label = g.series || '未分系列';
+        if (MULTI_CURRENCY && g.currency) label += '（' + g.currency + '）';
+        return { key: label, label: label };
+    }
+
     function renderMergedSummary() {
         var products = collectRows('product', function (row) {
             return (row.sku || 0) + '|' + (row.name || '') + '|' + (row.currency || '');
-        }, ['name', 'model', 'color', 'currency']);
+        }, ['name', 'model', 'color', 'series', 'currency']);
 
         var materials = collectRows('material', function (row) {
             return (row.name || '') + '|' + (row.spec || '') + '|' + (row.currency || '');
         }, ['name', 'spec', 'currency']);
 
+        // 同系列的行必须连续，小计才好插在组尾；组内保持汇总时的原顺序。
+        products.sort(function (a, b) {
+            var c = seriesCompare(a.series, b.series);
+            if (c !== 0) return c;
+            if (!MULTI_CURRENCY) return 0;
+            var ca = a.currency || '', cb = b.currency || '';
+            return ca < cb ? -1 : (ca > cb ? 1 : 0);
+        });
+
         var p = fillTable('mergeProduct', products, [
             function (g) { return '<td class="cell-name">' + esc(g.name) + '</td>'; },
             function (g) { return '<td>' + esc(g.model) + '</td>'; },
             function (g) { return '<td>' + esc(g.color) + '</td>'; }
-        ], 'qty', 'amount');
+        ], 'qty', 'amount', productGroup);
 
         var m = fillTable('mergeMaterial', materials, [
             function (g) { return '<td class="cell-name">' + esc(g.name) + '</td>'; },
