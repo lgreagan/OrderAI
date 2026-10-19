@@ -177,6 +177,22 @@
         return String(name).indexOf(model) === 0 ? String(name).slice(model.length) : '';
     }
 
+    // 组内产品中文名的公共前缀，作为系列的中文名：西瓜球6厘米草绿 / 西瓜球7厘米薄荷绿 → 西瓜球。
+    // 只有一项时没有「共同」可言，返回空，小计行只显示系列本身。
+    function seriesCN(names) {
+        names = (names || []).filter(function (n) { return !!n; });
+        if (names.length < 2) return '';
+        var prefix = names[0];
+        names.forEach(function (n) {
+            var i = 0;
+            while (i < prefix.length && i < n.length && prefix.charAt(i) === n.charAt(i)) i++;
+            prefix = prefix.slice(0, i);
+        });
+        var cut = prefix.search(/[0-9０-９\s]/);
+        if (cut >= 0) prefix = prefix.slice(0, cut);
+        return prefix;
+    }
+
     // 系列/版本排序：V1、V2…这类版本号排最前（按数字大小），其余系列按字母序，空值固定排最后。
     function seriesCompare(a, b) {
         a = a || ''; b = b || '';
@@ -504,9 +520,11 @@
     }
 
     // 小计按系列/版本分组；多币种时同系列不同币种分开算，不跨币种相加。
+    // 系列带中文名时拼成「V1-西瓜球」，与截图页口径一致。
     function productGroup(g) {
         var label = g.series || '未分系列';
         if (MULTI_CURRENCY && g.currency) label += '（' + g.currency + '）';
+        if (g.seriesCN) label += '-' + g.seriesCN;
         return { key: label, label: label };
     }
 
@@ -526,6 +544,17 @@
             if (!MULTI_CURRENCY) return 0;
             var ca = a.currency || '', cb = b.currency || '';
             return ca < cb ? -1 : (ca > cb ? 1 : 0);
+        });
+
+        // 每组的中文名（V1 + 西瓜球 → V1-西瓜球）：同组产品中文名的公共前缀。
+        var bySeries = {};
+        products.forEach(function (g) {
+            var k = (g.series || '未分系列') + (MULTI_CURRENCY ? '|' + (g.currency || '') : '');
+            (bySeries[k] || (bySeries[k] = [])).push(g);
+        });
+        Object.keys(bySeries).forEach(function (k) {
+            var cn = seriesCN(bySeries[k].map(function (g) { return g.name; }));
+            bySeries[k].forEach(function (g) { g.seriesCN = cn; });
         });
 
         var p = fillTable('mergeProduct', products, [

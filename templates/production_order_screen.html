@@ -131,6 +131,7 @@
         <div class="empty">正在加载…</div>
     </div>
 
+<script src="/web/js/order-i18n.js"></script>
 <script>
     var MO_ID = {{if .id}}{{.id}}{{else}}0{{end}};
     var SKUS = {}, RULES = {};
@@ -239,8 +240,8 @@
         var workTypeNames = { produce: '投料生产', pack: '包装装箱', none: '只记录' };
         var metaList = [
             ['客户', (order && order.customer) || '—'],
-            ['国家', (order && order.country) || '—'],
-            ['运输方式', (order && order.shipping_method) || '—'],
+            ['国家', OrderI18N.country(order && order.country) || '—'],
+            ['运输方式', OrderI18N.shipping(order && order.shipping_method) || '—'],
             ['订单时间', stamp(order && order.created_at) || '—'],
             ['生产单号', mo.po_number || '—'],
             ['作业类型', workTypeNames[mo.work_type] || '投料生产']

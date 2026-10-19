@@ -124,6 +124,7 @@
         <div class="empty">正在加载…</div>
     </div>
 
+<script src="/web/js/order-i18n.js"></script>
 <script>
     var PO_ID = {{if .id}}{{.id}}{{else}}0{{end}};
     var SKUS = {};
@@ -159,6 +160,25 @@
     function seriesOf(it) {
         var sku = it.item_id ? SKUS[it.item_id] : null;
         return sku && sku.series ? String(sku.series).trim() : '';
+    }
+    function productNameZH(it) {
+        var sku = it.item_id ? SKUS[it.item_id] : null;
+        return (sku && sku.product_name_zh) || it.item_name || '';
+    }
+    // 组内产品中文名的公共前缀，作为系列的中文名：西瓜球6厘米草绿 / 西瓜球7厘米薄荷绿 → 西瓜球。
+    // 只有一项时没有「共同」可言，返回空，小计行只显示系列本身。
+    function seriesCN(names) {
+        names = (names || []).filter(function (n) { return !!n; });
+        if (names.length < 2) return '';
+        var prefix = names[0];
+        names.forEach(function (n) {
+            var i = 0;
+            while (i < prefix.length && i < n.length && prefix.charAt(i) === n.charAt(i)) i++;
+            prefix = prefix.slice(0, i);
+        });
+        var cut = prefix.search(/[0-9０-９\s]/);
+        if (cut >= 0) prefix = prefix.slice(0, cut);
+        return prefix;
     }
     // 同系列的行连续排列，组尾才好放一行小计；组内保持单据原顺序。
     function groupBySeries(items) {
@@ -215,10 +235,12 @@
     }
 
     // 系列小计行：8 列 = 勾选 + (序号/名称/型号/颜色) + 数量 + 单价 + 金额。
-    function seriesSubtotalRow(series) {
-        return '<tr class="subtotal" data-series="' + esc(series) + '">'
+    // cn 是系列的中文名（如 V1-西瓜球），刷新时从 data-cn 读回来重写标题。
+    function seriesSubtotalRow(series, cn) {
+        var title = (series || '未分系列') + (cn ? '-' + cn : '');
+        return '<tr class="subtotal" data-series="' + esc(series) + '" data-cn="' + esc(cn || '') + '">'
             + '<td class="pick-col"></td>'
-            + '<td colspan="4" data-role="sub-label">' + esc((series || '未分系列') + ' 小计') + '</td>'
+            + '<td colspan="4" data-role="sub-label">' + esc(title + ' 小计') + '</td>'
             + '<td class="num" data-role="sub-qty">0</td>'
             + '<td></td>'
             + '<td class="num" data-role="sub-amount">0.00</td>'
@@ -243,7 +265,10 @@
             tr.classList.toggle('row-hidden', g.count === 0);
 
             var label = tr.querySelector('[data-role="sub-label"]');
-            if (label) label.textContent = (s || '未分系列') + ' 小计（' + g.count + ' 项）';
+            if (label) {
+                var cn = tr.getAttribute('data-cn') || '';
+                label.textContent = (s || '未分系列') + (cn ? '-' + cn : '') + ' 小计（' + g.count + ' 项）';
+            }
             var qEl = tr.querySelector('[data-role="sub-qty"]');
             if (qEl) qEl.textContent = qty(g.qty);
             var aEl = tr.querySelector('[data-role="sub-amount"]');
@@ -294,7 +319,7 @@
             });
             // 只有一个系列时小计与表尾合计重复，不插。
             if (prodGroups.length > 1) {
-                productRows += seriesSubtotalRow(grp.series);
+                productRows += seriesSubtotalRow(grp.series, seriesCN(grp.items.map(productNameZH)));
             }
         });
 
@@ -327,8 +352,8 @@
         FREIGHT = Number(po.freight_amount || 0);
         var meta = [
             ['客户', (order && order.customer) || '—'],
-            ['国家', (order && order.country) || '—'],
-            ['运输方式', (order && order.shipping_method) || '—'],
+            ['国家', OrderI18N.country(order && order.country) || '—'],
+            ['运输方式', OrderI18N.shipping(order && order.shipping_method) || '—'],
             ['订单时间', stamp(order && order.created_at) || day(po.order_date) || '—'],
             ['来源订单', po.source_order_number || '—'],
             ['制表时间', new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')]
