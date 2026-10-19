@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
+	"fmt"
 	"log"
+	"os"
 
 	"OrderAI/config"
 	"OrderAI/database"
+	"OrderAI/license"
 	"OrderAI/repository"
 	"OrderAI/routes"
 	"OrderAI/services"
@@ -13,7 +18,47 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// ========================================
+// 授权（绑定 CPU + 主网卡 MAC）
+// ========================================
+
+// licenseSecret 签名密钥。改动它 = 所有已发授权码立即失效。
+const licenseSecret = "OrderAI!2026@根#license$7f3a9c"
+
+// licenseCode 本机授权码：由 licenseSecret + 本机 CPU ID + 主网卡 MAC 签名得出。
+// 换服务器 / 换网卡：先跑 OrderAI.exe -lic 打印新授权码，替换这里再重新编译。
+const licenseCode = "ORDAI1-PDJJ-Z27F-4109-9C53"
+
 func main() {
+
+	// ========================================
+	// 授权校验（必须在连数据库之前）
+	// ========================================
+
+	printLic := flag.Bool("lic", false, "打印本机指纹与本机授权码后退出")
+	flag.Parse()
+
+	if *printLic {
+		printLicenseInfo()
+		return
+	}
+
+	if err := license.Verify(licenseSecret, licenseCode); err != nil {
+		log.Println("========================================")
+		log.Println("授权校验失败，程序停止启动")
+		var mm *license.MismatchError
+		if errors.As(err, &mm) {
+			log.Printf("本机指纹: CPU=%s  MAC=%s", mm.CPU, mm.MAC)
+			log.Println("原因：这台机器未授权，或更换了 CPU / 网卡")
+		} else {
+			log.Printf("原因: %v", err)
+		}
+		log.Println("获取授权码：执行  OrderAI.exe -lic  会打印本机授权码，")
+		log.Println("替换 main.go 里的 licenseCode 后重新编译；或把上面的指纹发给管理员出码。")
+		log.Println("========================================")
+		os.Exit(1)
+	}
+	log.Printf("授权校验通过（%s）", license.MachineLine())
 
 	// ========================================
 	// 配置
@@ -210,4 +255,29 @@ func main() {
 	e.Logger.Fatal(
 		e.Start(":" + port),
 	)
+}
+
+// printLicenseInfo 打印本机指纹与应填授权码，供换机 / 首次部署时使用。
+func printLicenseInfo() {
+	cpu, mac, err := license.Fingerprint()
+	if err != nil {
+		log.Fatal("读取机器指纹失败: ", err)
+	}
+	code := license.Code(licenseSecret, cpu, mac)
+
+	fmt.Println()
+	fmt.Println("========== OrderAI 授权信息 ==========")
+	fmt.Println("CPU     :", cpu)
+	fmt.Println("MAC     :", mac)
+	fmt.Println("授权码  :", code)
+	fmt.Println()
+	fmt.Println("其它网卡（主网卡换/停用时从这里挑一个重新出码）：")
+	for _, m := range license.AllMACs() {
+		fmt.Println("  ", m)
+	}
+	fmt.Println()
+	fmt.Println("填到 main.go：")
+	fmt.Printf("const licenseCode = %q\n", code)
+	fmt.Println("=====================================")
+	fmt.Println()
 }
