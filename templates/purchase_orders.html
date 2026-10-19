@@ -98,7 +98,8 @@
                                 <select class="form-select" id="sourceOrderId">
                                     <option value="">不关联订单</option>
                                 </select>
-                                <button class="btn btn-outline-secondary" type="button" id="loadSuggestionBtn">载入建议</button>
+                                <button class="btn btn-outline-secondary" type="button" id="loadSuggestionBtn"
+                                        title="选好来源订单会自动按建议量带出产品，这里是手动重新载入">载入建议</button>
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -606,7 +607,6 @@
                     return;
                 }
 
-                const keep = new Set(needs.map(n => Number(n.material_id)));
                 needs.forEach(n => {
                     const quantity = Number(n.quantity) || 0;
                     const packPerCarton = Number(n.pack_per_carton) || 0;
@@ -641,12 +641,9 @@
                     });
                 });
 
-                // 组合口径变了（例如取消关联订单）后不再需要的自动行直接清掉，
-                // 免得留下"其实不用买的组合纸箱"。手工加的行、数量被手工改过的行一律不动。
-                state.po.items = (state.po.items || []).filter(it =>
-                    it.item_type !== 'material' || !it.auto_material || it.manual_quantity ||
-                    keep.has(Number(it.item_id)));
-
+                // 这里**不再**清掉「当前需求里没有」的材料行。
+                // 库存里有产品，不代表也有纸箱：删掉产品行（或把采购量改成 0）只是不买产品，
+                // 纸箱仍可能要单独采购，所以材料行一律保留，由人工决定删不删。
                 pulledMaterials = true;
                 renderItems();
             } catch (err) {
@@ -658,9 +655,26 @@
 
         $('#purchaseMaterialBtn').on('click', () => pullMaterials());
 
-        // 换来源订单 = 换一套需求量，纸箱要按新订单重新带出。
-        $('#sourceOrderId').on('change', function () {
-            state.po.source_order_id = Number($(this).val()) || 0;
+        // 换来源订单 = 换一套需求量：新建单据直接按新订单的建议量带出产品，
+        // 已保存的单据只重算纸箱，不覆盖已存的数量。
+        $('#sourceOrderId').on('change', async function () {
+            const orderId = Number($(this).val()) || 0;
+            if (!state.po) state.po = { items: [] };
+
+            if (!$('#poId').val()) {
+                const hasProducts = (state.po.items || []).some(it => it.item_type !== 'material');
+                if (orderId && hasProducts &&
+                    !confirm('更换来源订单会用新订单的建议量替换当前产品明细，继续？')) {
+                    $(this).val(state.po.source_order_id || '');
+                    return;
+                }
+                state.po.source_order_id = orderId;
+                // 选好订单即自动载入建议量，不用再点「载入建议」。
+                if (orderId) await loadSuggestion();
+                return;
+            }
+
+            state.po.source_order_id = orderId;
             if (pulledMaterials) pullMaterials({ silent: true });
         });
 
@@ -680,11 +694,18 @@
             if (it.type !== 'material') scheduleMaterialRefresh();
         });
 
-        $('#loadSuggestionBtn').on('click', async function () {
+        // 载入来源订单的采购建议：产品行的采购量默认等于建议量（需求 − 库存 − 在途）。
+        // 新建单据时选好来源订单会自动调用，不需要先点「载入建议」再点「一键同步建议量」。
+        async function loadSuggestion({ silent = false } = {}) {
+            if (!state.po) state.po = { items: [] };
             const orderId = Number($('#sourceOrderId').val()) || 0;
-            if (!orderId) { alert('请先选择来源订单'); return; }
+            if (!orderId) {
+                if (!silent) alert('请先选择来源订单');
+                return false;
+            }
 
-            $(this).prop('disabled', true).text('载入中...');
+            const btn = $('#loadSuggestionBtn');
+            if (!silent) btn.prop('disabled', true).text('载入中...');
             try {
                 const result = await $.getJSON(`${api}/order/${orderId}/suggestion`);
                 if (!result.success) throw new Error(result.message || '载入失败');
@@ -711,12 +732,16 @@
                 state.po.items.forEach(it => { it.amount = Math.round(it.quantity * it.unit_price * 100) / 100; });
                 renderItems();
                 scheduleMaterialRefresh();
+                return true;
             } catch (err) {
-                alert(err.responseJSON?.message || err.message || '载入采购建议失败');
+                if (!silent) alert(err.responseJSON?.message || err.message || '载入采购建议失败');
+                return false;
             } finally {
-                $(this).prop('disabled', false).text('载入建议');
+                if (!silent) btn.prop('disabled', false).text('载入建议');
             }
-        });
+        }
+
+        $('#loadSuggestionBtn').on('click', () => loadSuggestion());
 
         // 按「产品 / 材料」两类分别汇总数量与金额。
         function sumOf(items, isMaterial) {
