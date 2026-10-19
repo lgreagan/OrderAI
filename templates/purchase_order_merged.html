@@ -164,6 +164,11 @@
     var SKUS = {};
     var MULTI_CURRENCY = false;
 
+    // 合并清单自身的显隐与勾选状态。合并表每次刷新都会整块重建，
+    // 状态必须存在这里才不会丢；键是 物品/规格 + 币种 的合并键。
+    var hiddenMerge = { mergeProduct: {}, mergeMaterial: {} };
+    var pickedMerge = { mergeProduct: {}, mergeMaterial: {} };
+
     function esc(value) {
         return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -368,10 +373,15 @@
         body += ''
             + '<section class="po-block">'
             + '<div class="po-head"><h2>合并采购清单</h2>'
-            + '<span class="sup">把上面各单的同款物品合并，只统计当前可见行</span></div>'
-            + '<div class="list-head"><h3>产品（按 SKU 合并）</h3></div>'
+            + '<span class="sup">同款物品跨单合并；清单里也能勾选隐藏，只统计当前可见行</span></div>'
+            + '<div class="list-head"><h3>产品（按 SKU 合并）</h3>'
+            + '<div class="list-tools"><span class="hint" data-role="hidden-hint"></span>'
+            + '<button class="btn btn-mini hide-picked-btn" type="button" data-table="mergeProduct">隐藏勾选</button>'
+            + '<button class="btn btn-mini show-all-btn" type="button" data-table="mergeProduct">显示全部</button>'
+            + '</div></div>'
             + '<table id="mergeProduct">'
             + '<thead><tr>'
+            + '<th class="ctr pick-col"><input type="checkbox" class="pick-all" title="全选 / 全不选"></th>'
             + '<th class="ctr" style="width:44px">序号</th>'
             + '<th>产品中文名</th><th style="width:110px">型号</th><th style="width:100px">颜色</th>'
             + '<th class="num" style="width:96px">数量合计</th>'
@@ -379,13 +389,18 @@
             + '<th class="num" style="width:110px">金额合计</th>'
             + '<th class="num" style="width:90px">单据数</th>'
             + '</tr></thead><tbody></tbody>'
-            + '<tfoot><tr class="total"><td colspan="4">合计</td>'
+            + '<tfoot><tr class="total"><td class="pick-col"></td><td colspan="4">合计</td>'
             + '<td class="num" data-role="qty">0</td><td></td>'
             + '<td class="num" data-role="amount">0.00</td><td></td></tr></tfoot>'
             + '</table>'
-            + '<div class="list-head"><h3>材料（按规格合并）</h3></div>'
+            + '<div class="list-head"><h3>材料（按规格合并）</h3>'
+            + '<div class="list-tools"><span class="hint" data-role="hidden-hint"></span>'
+            + '<button class="btn btn-mini hide-picked-btn" type="button" data-table="mergeMaterial">隐藏勾选</button>'
+            + '<button class="btn btn-mini show-all-btn" type="button" data-table="mergeMaterial">显示全部</button>'
+            + '</div></div>'
             + '<table id="mergeMaterial">'
             + '<thead><tr>'
+            + '<th class="ctr pick-col"><input type="checkbox" class="pick-all" title="全选 / 全不选"></th>'
             + '<th class="ctr" style="width:44px">序号</th>'
             + '<th>材料</th><th>规格</th>'
             + '<th class="num" style="width:96px">用量合计</th>'
@@ -393,7 +408,7 @@
             + '<th class="num" style="width:110px">金额合计</th>'
             + '<th class="num" style="width:90px">单据数</th>'
             + '</tr></thead><tbody></tbody>'
-            + '<tfoot><tr class="total"><td colspan="3">合计</td>'
+            + '<tfoot><tr class="total"><td class="pick-col"></td><td colspan="3">合计</td>'
             + '<td class="num" data-role="qty">0</td><td></td>'
             + '<td class="num" data-role="amount">0.00</td><td></td></tr></tfoot>'
             + '</table>'
@@ -415,9 +430,6 @@
 
     // 每张表格独立重算：序号按可见行重排，合计只算可见行（隐藏的行不该出现在给厂家的数量里）。
     function refresh() {
-        var productQty = 0, productAmount = 0, materialQty = 0, materialAmount = 0, freight = 0;
-        var amountByCurrency = {};
-
         document.querySelectorAll('table.po-table').forEach(function (table) {
             var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr[data-qty]'));
             var shown = 0, qtySum = 0, amountSum = 0, picked = 0;
@@ -453,23 +465,19 @@
             if (hideBtn) hideBtn.disabled = picked === 0;
             var showBtn = head ? head.querySelector('.show-all-btn') : null;
             if (showBtn) showBtn.disabled = hiddenCount === 0;
-
-            if (table.getAttribute('data-kind') === 'product') {
-                productQty += qtySum;
-                productAmount += amountSum;
-            } else {
-                materialQty += qtySum;
-                materialAmount += amountSum;
-            }
         });
 
+        // 合并清单受「原始单据显隐」和「清单自身显隐」双重影响；
+        // 顶部汇总直接取它的可见合计，保证上面的数字与清单合计永远一致。
+        var merged = renderMergedSummary();
+
         // 运费按单据累加（同一单据只加一次），与本单是否隐藏行无关。
+        var freight = 0;
         document.querySelectorAll('section.po-block[data-freight]').forEach(function (sec) {
             freight += Number(sec.getAttribute('data-freight') || 0);
         });
 
-        renderMergedSummary();
-        renderSummaryBar(productQty, productAmount, materialQty, materialAmount, freight, MULTI_CURRENCY);
+        renderSummaryBar(merged.productQty, merged.productAmount, merged.materialQty, merged.materialAmount, freight, MULTI_CURRENCY);
     }
 
     function collectVisible(kind, keyOf, fields) {
@@ -482,7 +490,7 @@
                 var key = keyOf(tr);
                 var g = groups[key];
                 if (!g) {
-                    g = { qty: 0, amount: 0, pos: {} };
+                    g = { key: key, qty: 0, amount: 0, pos: {} };
                     fields.forEach(function (f) { g[f] = tr.getAttribute('data-' + f) || ''; });
                     groups[key] = g;
                     order.push(key);
@@ -498,33 +506,85 @@
         return order.map(function (k) { return groups[k]; });
     }
 
+    // 合并清单中的一张表：按可见行重排序号、只累加可见行，并恢复上次的显隐与勾选。
+    // 返回本表可见合计，供顶部汇总使用。
     function fillTable(tableId, list, cells, qtyRole, amountRole) {
         var table = document.getElementById(tableId);
-        if (!table) return;
+        if (!table) return { qty: 0, amount: 0 };
+
         var tbody = table.querySelector('tbody');
-        var qtySum = 0, amountSum = 0;
+        var hiddenBag = hiddenMerge[tableId] || (hiddenMerge[tableId] = {});
+        var pickBag = pickedMerge[tableId] || (pickedMerge[tableId] = {});
+        var qtySum = 0, amountSum = 0, shown = 0, picked = 0;
 
         if (!list.length) {
-            tbody.innerHTML = '<tr><td colspan="' + (cells.length + 5) + '" class="empty">暂无数据</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + (cells.length + 6) + '" class="empty">暂无数据</td></tr>';
         } else {
-            tbody.innerHTML = list.map(function (g, i) {
-                qtySum += g.qty;
-                amountSum += g.amount;
+            tbody.innerHTML = list.map(function (g) {
+                var hidden = !!hiddenBag[g.key];
+                var isPicked = !hidden && !!pickBag[g.key];
+                if (hidden) {
+                    delete pickBag[g.key];
+                } else {
+                    shown += 1;
+                    qtySum += g.qty;
+                    amountSum += g.amount;
+                    if (isPicked) picked += 1;
+                }
                 var posCount = Object.keys(g.pos).length;
-                return '<tr><td class="ctr">' + (i + 1) + '</td>'
-                    + cells.map(function (c) { return c(g, i); }).join('')
+                return '<tr data-key="' + esc(g.key) + '" data-qty="' + g.qty + '" data-amount="' + g.amount + '"'
+                    + (hidden ? ' class="row-hidden"' : '') + '>'
+                    + '<td class="ctr pick-col"><input type="checkbox" class="row-pick"'
+                    + (isPicked ? ' checked' : '') + '></td>'
+                    + '<td class="ctr row-no">' + (hidden ? '' : shown) + '</td>'
+                    + cells.map(function (c) { return c(g); }).join('')
                     + '<td class="num">' + qty(g.qty) + '</td>'
                     + '<td class="num">' + esc(g.currency || '') + '</td>'
                     + '<td class="num">' + money(g.amount) + '</td>'
                     + '<td class="num">' + posCount + '</td>'
                     + '</tr>';
             }).join('');
+            // 全部行都被隐藏时给个占位提示，否则表格看起来像坏了。
+            if (shown === 0) {
+                tbody.innerHTML += '<tr><td colspan="' + (cells.length + 6) + '" class="empty">'
+                    + '全部行已隐藏，点「显示全部」恢复</td></tr>';
+            }
         }
 
         var qtyEl = table.querySelector('[data-role="' + qtyRole + '"]');
         if (qtyEl) qtyEl.textContent = qty(qtySum);
         var amountEl = table.querySelector('[data-role="' + amountRole + '"]');
         if (amountEl) amountEl.textContent = money(amountSum);
+
+        var head = table.previousElementSibling;
+        var hintEl = head ? head.querySelector('[data-role="hidden-hint"]') : null;
+        var hiddenCount = list.length - shown;
+        if (hintEl) hintEl.textContent = hiddenCount > 0 ? ('已隐藏 ' + hiddenCount + ' 行') : '';
+
+        var allBox = table.querySelector('.pick-all');
+        if (allBox) {
+            allBox.checked = shown > 0 && picked === shown;
+            allBox.indeterminate = picked > 0 && picked < shown;
+            allBox.disabled = shown === 0;
+        }
+        var hideBtn = head ? head.querySelector('.hide-picked-btn') : null;
+        if (hideBtn) hideBtn.disabled = picked === 0;
+        var showBtn = head ? head.querySelector('.show-all-btn') : null;
+        if (showBtn) showBtn.disabled = hiddenCount === 0;
+
+        return { qty: qtySum, amount: amountSum };
+    }
+
+    // 合并表每次都会整块重建，勾选状态从 DOM 回写到 pickedMerge。
+    function syncMergePicked(table) {
+        var bag = pickedMerge[table.id] || (pickedMerge[table.id] = {});
+        Array.prototype.slice.call(table.querySelectorAll('tbody tr[data-key]')).forEach(function (tr) {
+            var key = tr.getAttribute('data-key');
+            var box = tr.querySelector('.row-pick');
+            if (!key) return;
+            if (tr.classList.contains('row-hidden') || !box || !box.checked) delete bag[key];
+            else bag[key] = true;
+        });
     }
 
     function renderMergedSummary() {
@@ -538,16 +598,21 @@
                 + '|' + (tr.getAttribute('data-currency') || '');
         }, ['name', 'spec', 'currency']);
 
-        fillTable('mergeProduct', products, [
+        var p = fillTable('mergeProduct', products, [
             function (g) { return '<td class="cell-name">' + esc(g.name) + '</td>'; },
             function (g) { return '<td>' + esc(g.model) + '</td>'; },
             function (g) { return '<td>' + esc(g.color) + '</td>'; }
         ], 'qty', 'amount');
 
-        fillTable('mergeMaterial', materials, [
+        var m = fillTable('mergeMaterial', materials, [
             function (g) { return '<td class="cell-name">' + esc(g.name) + '</td>'; },
             function (g) { return '<td>' + esc(g.spec) + '</td>'; }
         ], 'qty', 'amount');
+
+        return {
+            productQty: p.qty, productAmount: p.amount,
+            materialQty: m.qty, materialAmount: m.amount
+        };
     }
 
     function renderSummaryBar(productQty, productAmount, materialQty, materialAmount, freight, multiCurrency) {
@@ -572,8 +637,9 @@
     document.getElementById('sheet').addEventListener('change', function (e) {
         var box = e.target;
         if (!box.classList) return;
+        var table = box.closest ? box.closest('table') : null;
+
         if (box.classList.contains('pick-all')) {
-            var table = box.closest('table');
             if (!table) return;
             Array.prototype.slice.call(table.querySelectorAll('tbody tr[data-qty]')).forEach(function (tr) {
                 if (tr.classList.contains('row-hidden')) return;
@@ -581,6 +647,8 @@
                 if (b) b.checked = box.checked;
             });
         }
+        // 合并清单会整块重绘，勾选状态先记到 bag 里。
+        if (table && table.id && table.id.indexOf('merge') === 0) syncMergePicked(table);
         refresh();
     });
 
@@ -591,9 +659,20 @@
         if (hideBtn) {
             var t1 = document.getElementById(hideBtn.getAttribute('data-table'));
             if (t1) {
+                var isMerge = t1.id && t1.id.indexOf('merge') === 0;
+                var hiddenBag = isMerge ? (hiddenMerge[t1.id] || (hiddenMerge[t1.id] = {})) : null;
+                var pickBag = isMerge ? (pickedMerge[t1.id] || (pickedMerge[t1.id] = {})) : null;
+
                 Array.prototype.slice.call(t1.querySelectorAll('tbody tr[data-qty]')).forEach(function (tr) {
                     var box = tr.querySelector('.row-pick');
                     if (tr.classList.contains('row-hidden') || !box || !box.checked) return;
+                    if (isMerge) {
+                        var key = tr.getAttribute('data-key');
+                        if (key) {
+                            hiddenBag[key] = true;
+                            if (pickBag) delete pickBag[key];
+                        }
+                    }
                     tr.classList.add('row-hidden');
                     box.checked = false;
                 });
@@ -606,6 +685,10 @@
         if (showBtn) {
             var t2 = document.getElementById(showBtn.getAttribute('data-table'));
             if (t2) {
+                if (t2.id && t2.id.indexOf('merge') === 0) {
+                    hiddenMerge[t2.id] = {};
+                    pickedMerge[t2.id] = {};
+                }
                 Array.prototype.slice.call(t2.querySelectorAll('tbody tr[data-qty]')).forEach(function (tr) {
                     tr.classList.remove('row-hidden');
                     var box = tr.querySelector('.row-pick');
