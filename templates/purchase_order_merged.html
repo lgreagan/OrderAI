@@ -109,7 +109,26 @@
         .pick-col { width: 34px; }
         .pick-col input { width: 15px; height: 15px; cursor: pointer; margin: 0; vertical-align: middle; }
         body.clean .pick-col,
-        body.clean .list-tools { display: none; }
+        body.clean .list-tools,
+        body.clean .order-text .btn { display: none; }
+
+        /* 下单文案：一句话汇总，复制后直接发微信 / 短信 / 邮件。 */
+        .order-text {
+            margin: 0 0 14px;
+            padding: 10px 12px;
+            background: #f6f9ff;
+            border: 1px dashed #b9cdf0;
+            border-radius: 8px;
+        }
+        .order-text .ot-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .order-text h2 { font-size: 13px; margin: 0; color: var(--brand); }
+        .order-text p { margin: 0; font-size: 13px; line-height: 1.75; word-break: break-word; }
 
         .note { margin-top: 10px; color: var(--muted); font-size: 12px; }
         .foot {
@@ -128,6 +147,7 @@
             .toolbar { display: none !important; }
             .pick-col { display: none !important; }
             .list-tools { display: none !important; }
+            .order-text .btn { display: none !important; }
             .sheet { border: 0; border-radius: 0; padding: 0; max-width: none; }
             thead { display: table-header-group; }
             tr { page-break-inside: avoid; }
@@ -147,6 +167,7 @@
         <div class="empty">正在加载…</div>
     </div>
 
+<script src="/web/js/order-text.js"></script>
 <script>
     // 勾选的采购单 id，逗号分隔，由服务端注入。
     var RAW_IDS = '{{.ids}}';
@@ -320,6 +341,11 @@
             + '<span>制表时间：' + esc(new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')) + '</span>'
             + '</div>'
             + '<div class="summary" id="summaryBar"></div>'
+            + '<div class="order-text" id="orderTextBox">'
+            + '<div class="ot-head"><h2>下单文案</h2>'
+            + '<button class="btn btn-mini" type="button" id="copyOrderTextBtn">复制</button></div>'
+            + '<p id="orderTextBody"></p>'
+            + '</div>'
             + '<section class="po-block">'
             + listHead('产品（按 SKU 合并）', 'mergeProduct')
             + '<table id="mergeProduct">'
@@ -568,10 +594,28 @@
             function (g) { return '<td>' + esc(g.spec) + '</td>'; }
         ], 'qty', 'amount');
 
+        // 下单文案跟着合并清单走：隐藏掉的行不算，跨单数量已经合并好。
+        renderOrderText(products);
+
         return {
             productQty: p.qty, productAmount: p.amount,
             materialQty: m.qty, materialAmount: m.amount
         };
+    }
+
+    // 把可见的合并产品行拼成一句话（按系列 / 尺寸 / 颜色），用于发邮件或短信。
+    function renderOrderText(products) {
+        var body = document.getElementById('orderTextBody');
+        if (!body) return;
+
+        var hiddenBag = hiddenMerge['mergeProduct'] || {};
+        var items = products
+            .filter(function (g) { return !hiddenBag[g.key]; })
+            .map(function (g) {
+                return { series: g.series, name: g.name, color: g.color, qty: g.qty };
+            });
+
+        body.textContent = OrderText.build(items) || '（没有可统计的产品）';
     }
 
     function renderSummaryBar(productQty, productAmount, materialQty, materialAmount, freight, multiCurrency) {
@@ -613,6 +657,17 @@
 
     document.getElementById('sheet').addEventListener('click', function (e) {
         if (!e.target.closest) return;
+
+        // 复制下单文案：按钮在 sheet 内，重绘后依然有效，所以走事件委托。
+        var copyBtn = e.target.closest('#copyOrderTextBtn');
+        if (copyBtn) {
+            var textEl = document.getElementById('orderTextBody');
+            OrderText.copy(textEl ? textEl.textContent : '').then(function (ok) {
+                copyBtn.textContent = ok ? '已复制' : '复制失败';
+                setTimeout(function () { copyBtn.textContent = '复制'; }, 1600);
+            });
+            return;
+        }
 
         var hideBtn = e.target.closest('.hide-picked-btn');
         if (hideBtn) {

@@ -92,6 +92,24 @@
         .list-tools { display: flex; align-items: center; gap: 8px; }
         .hint { color: var(--muted); font-size: 12px; }
         .btn-mini { padding: 4px 10px; font-size: 12px; border-radius: 5px; }
+
+        /* 下单文案：一句话汇总，直接复制发微信 / 短信 / 邮件；截图时也不碍事。 */
+        .order-text {
+            margin: 0 0 14px;
+            padding: 10px 12px;
+            background: #f6f9ff;
+            border: 1px dashed #b9cdf0;
+            border-radius: 8px;
+        }
+        .order-text .ot-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .order-text h2 { font-size: 13px; margin: 0; color: var(--brand); }
+        .order-text p { margin: 0; font-size: 13px; line-height: 1.75; word-break: break-word; }
         .btn:disabled { opacity: .45; cursor: not-allowed; }
 
         /* 勾选框列：屏幕上是挑选行用的，打印与「干净视图」下都不出现。 */
@@ -99,7 +117,8 @@
         .pick-col input { width: 15px; height: 15px; cursor: pointer; margin: 0; vertical-align: middle; }
         tr.row-hidden { display: none; }
         body.clean .pick-col,
-        body.clean .list-tools { display: none; }
+        body.clean .list-tools,
+        body.clean .order-text .btn { display: none; }
 
         @page { size: A4 portrait; margin: 12mm; }
         @media print {
@@ -107,6 +126,7 @@
             .toolbar { display: none !important; }
             .pick-col { display: none !important; }
             .list-tools { display: none !important; }
+            .order-text .btn { display: none !important; }
             .sheet { border: 0; border-radius: 0; padding: 0; max-width: none; }
             thead { display: table-header-group; }
             tr { page-break-inside: avoid; }
@@ -125,6 +145,7 @@
     </div>
 
 <script src="/web/js/order-i18n.js"></script>
+<script src="/web/js/order-text.js"></script>
 <script>
     var PO_ID = {{if .id}}{{.id}}{{else}}0{{end}};
     var SKUS = {};
@@ -308,7 +329,8 @@
                 prodIndex += 1;
 
                 productRows += '<tr' + rowAttrs('product', quantity, amount)
-                    + ' data-series="' + esc(grp.series) + '">'
+                    + ' data-series="' + esc(grp.series) + '"'
+                    + ' data-name="' + esc(name) + '" data-color="' + esc(color) + '">'
                     + pickCell()
                     + '<td class="ctr row-no">' + prodIndex + '</td>'
                     + '<td class="cell-name">' + esc(name) + '</td>'
@@ -366,6 +388,11 @@
         document.getElementById('sheet').innerHTML = ''
             + '<h1>采购批次汇总<span class="no">' + esc(po.po_number) + '</span></h1>'
             + '<div class="meta">' + meta + '</div>'
+            + '<div class="order-text" id="orderTextBox">'
+            + '<div class="ot-head"><h2>下单文案</h2>'
+            + '<button class="btn btn-mini" type="button" id="copyOrderTextBtn">复制</button></div>'
+            + '<p id="orderTextBody"></p>'
+            + '</div>'
             + '<div class="list-head">'
             + '<h2>产品（<span id="productCount">' + products.length + '</span> 项）</h2>'
             + '<div class="list-tools">'
@@ -580,6 +607,26 @@
 
         // 规格统计跟着可见材料行走：隐藏的行不再计入。
         renderSpecSummary();
+        renderOrderText();
+    }
+
+    // 下单文案：把当前可见的产品行拼成一句话，隐藏掉的行不算（与上面的合计口径一致）。
+    function renderOrderText() {
+        var body = document.getElementById('orderTextBody');
+        if (!body) return;
+
+        var items = [];
+        rowsOf('product').forEach(function (tr) {
+            if (isHidden(tr)) return;
+            items.push({
+                series: tr.getAttribute('data-series') || '',
+                name: tr.getAttribute('data-name') || '',
+                color: tr.getAttribute('data-color') || '',
+                qty: Number(tr.getAttribute('data-qty') || 0)
+            });
+        });
+
+        body.textContent = OrderText.build(items) || '（没有可统计的产品）';
     }
 
     // 勾选只表示「选中这些行」，不直接控制显隐：勾好再点「隐藏勾选」。事件委托挂在 #sheet 上，重绘后无需重新绑定。
@@ -599,6 +646,17 @@
 
     document.getElementById('sheet').addEventListener('click', function (e) {
         if (!e.target.closest) return;
+
+        // 复制下单文案：按钮在 sheet 内，重绘后依然有效，所以走事件委托。
+        var copyBtn = e.target.closest('#copyOrderTextBtn');
+        if (copyBtn) {
+            var text = document.getElementById('orderTextBody');
+            OrderText.copy(text ? text.textContent : '').then(function (ok) {
+                copyBtn.textContent = ok ? '已复制' : '复制失败';
+                setTimeout(function () { copyBtn.textContent = '复制'; }, 1600);
+            });
+            return;
+        }
 
         // 隐藏勾选：把勾选中的可见行隐藏，并清掉它们的勾选（已不在视图里）。
         var hideBtn = e.target.closest('.hide-picked-btn');
