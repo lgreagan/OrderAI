@@ -67,18 +67,7 @@
         .summary .v { font-size: 17px; font-weight: 700; }
         .summary .v .unit { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 3px; }
 
-        .po-block { margin-top: 20px; padding-top: 14px; border-top: 2px solid var(--line); }
-        .po-block:first-of-type { border-top: 0; padding-top: 0; }
-
-        .po-head {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 6px;
-        }
-        .po-head h2 { font-size: 16px; margin: 0; color: var(--brand); }
-        .po-head .sup { color: var(--muted); font-size: 12.5px; }
+        .po-block { margin-top: 18px; }
         .meta {
             display: flex;
             flex-wrap: wrap;
@@ -163,6 +152,7 @@
         .map(function (v) { return parseInt(v, 10); })
         .filter(function (v) { return v > 0; });
     var SKUS = {};
+    var ALL_POS = [];
     var MULTI_CURRENCY = false;
 
     // 合并清单自身的显隐与勾选状态。合并表每次刷新都会整块重建，
@@ -177,14 +167,7 @@
     }
     function qty(v) { return Number(v || 0).toFixed(3).replace(/\.?0+$/, ''); }
     function money(v) { return Number(v || 0).toFixed(2); }
-    function day(v) { return v ? String(v).slice(0, 10) : ''; }
-    function stamp(v) { return v ? String(v).replace('T', ' ').slice(0, 16) : ''; }
     function getJSON(url) { return fetch(url).then(function (r) { return r.json(); }); }
-
-    var STATUS = {
-        draft: '草稿', ordered: '已下单', partial: '部分到货',
-        received: '已到货', cancelled: '已取消'
-    };
 
     // 型号一般就是产品名的前缀，SKU 已删除时用它把颜色拆出来。
     function stripModel(name, model) {
@@ -217,170 +200,97 @@
         }
     }
 
-    // 行首勾选框：勾选 = 选中这一行（给「隐藏勾选」用），不直接控制显隐、不改单据数据。
-    function pickCell() {
-        return '<td class="ctr pick-col"><input type="checkbox" class="row-pick"></td>';
+    // 合并清单不再按单展示：所有单据的明细直接汇进两张合并表，
+    // 同一物品跨单合并，只用「单据数」说明它来自几张单。
+    function productInfo(it, currency) {
+        var sku = it.item_id ? SKUS[it.item_id] : null;
+        var name = (sku && sku.product_name_zh) || it.item_name || it.item_code || '';
+        var model = (sku && sku.model) || it.spec || '';
+        return {
+            sku: it.item_id || 0,
+            name: name,
+            model: model,
+            color: (sku && sku.color) || stripModel(name, model),
+            currency: currency,
+            qty: Number(it.quantity || 0),
+            price: Number(it.unit_price || 0),
+            amount: Number(it.amount || 0)
+        };
     }
 
-    function productTable(po, index) {
-        var items = (po.items || []).filter(function (it) { return it.item_type !== 'material'; });
-        var currency = po.currency || 'CNY';
-        var id = 'po' + index + '-product';
+    function materialInfo(it, currency) {
+        return {
+            name: it.item_name || it.short_name || it.item_code || '',
+            spec: it.spec || '',
+            currency: currency,
+            qty: Number(it.quantity || 0),
+            price: Number(it.unit_price || 0),
+            amount: Number(it.amount || 0)
+        };
+    }
 
-        var rows = items.map(function (it, i) {
-            var sku = it.item_id ? SKUS[it.item_id] : null;
-            var name = (sku && sku.product_name_zh) || it.item_name || it.item_code || '';
-            var model = (sku && sku.model) || it.spec || '';
-            var color = (sku && sku.color) || stripModel(name, model);
-            var quantity = Number(it.quantity || 0);
-            var amount = Number(it.amount || 0);
+    // 按「物品 + 币种」聚合：不同币种的金额不能相加，宁可分成两行。
+    function collectRows(kind, keyOf, fields) {
+        var groups = {}, order = [];
 
-            var attrs = ' data-kind="product" data-qty="' + quantity + '" data-amount="' + amount + '"'
-                + ' data-price="' + Number(it.unit_price || 0) + '"'
-                + ' data-name="' + esc(name) + '" data-sku="' + (it.item_id || 0) + '"'
-                + ' data-currency="' + esc(currency) + '" data-model="' + esc(model) + '"'
-                + ' data-color="' + esc(color) + '" data-unit="' + esc(it.unit || '') + '"';
+        ALL_POS.forEach(function (po) {
+            var currency = po.currency || 'CNY';
+            (po.items || []).forEach(function (it) {
+                var isMaterial = it.item_type === 'material';
+                if ((kind === 'material') !== isMaterial) return;
 
-            return '<tr' + attrs + '>'
-                + pickCell()
-                + '<td class="ctr row-no">' + (i + 1) + '</td>'
-                + '<td class="cell-name">' + esc(name) + '</td>'
-                + '<td>' + esc(model) + '</td>'
-                + '<td>' + esc(color) + '</td>'
-                + '<td class="num">' + qty(quantity) + '</td>'
-                + '<td class="num">' + money(it.unit_price) + '</td>'
-                + '<td class="num">' + money(amount) + '</td>'
-                + '</tr>';
-        }).join('');
+                var row = kind === 'material' ? materialInfo(it, currency) : productInfo(it, currency);
+                var key = keyOf(row);
+                var g = groups[key];
+                if (!g) {
+                    g = { key: key, qty: 0, amount: 0, pos: {}, prices: {} };
+                    fields.forEach(function (f) { g[f] = row[f] === undefined ? '' : row[f]; });
+                    g.currency = currency;
+                    groups[key] = g;
+                    order.push(key);
+                }
+                g.qty += row.qty;
+                g.amount += row.amount;
+                if (row.price > 0) g.prices[row.price] = true;
+                if (po.po_number) g.pos[po.po_number] = true;
+            });
+        });
 
-        if (!items.length) rows = '<tr><td colspan="8" class="empty">无产品明细</td></tr>';
+        return order.map(function (k) { return groups[k]; });
+    }
 
-        return ''
-            + '<div class="list-head"><h3>产品（' + items.length + ' 项）</h3>'
+    function listHead(title, tableId) {
+        return '<div class="list-head"><h3>' + esc(title) + '</h3>'
             + '<div class="list-tools"><span class="hint" data-role="hidden-hint"></span>'
-            + '<button class="btn btn-mini hide-picked-btn" type="button" data-table="' + id + '">隐藏勾选</button>'
-            + '<button class="btn btn-mini show-all-btn" type="button" data-table="' + id + '">显示全部</button>'
-            + '</div></div>'
-            + '<table class="po-table" id="' + id + '" data-kind="product">'
-            + '<thead><tr>'
-            + '<th class="ctr pick-col"><input type="checkbox" class="pick-all" title="全选 / 全不选"></th>'
-            + '<th class="ctr" style="width:44px">序号</th>'
-            + '<th>产品中文名</th><th style="width:110px">型号</th><th style="width:100px">颜色</th>'
-            + '<th class="num" style="width:90px">采购数量</th>'
-            + '<th class="num" style="width:80px">单价</th>'
-            + '<th class="num" style="width:96px">金额</th>'
-            + '</tr></thead>'
-            + '<tbody>' + rows + '</tbody>'
-            + '<tfoot><tr class="total">'
-            + '<td class="pick-col"></td><td colspan="4">产品合计</td>'
-            + '<td class="num" data-role="qty">0</td><td></td>'
-            + '<td class="num" data-role="amount">0.00</td>'
-            + '</tr></tfoot>'
-            + '</table>';
-    }
-
-    function materialTable(po, index) {
-        var items = (po.items || []).filter(function (it) { return it.item_type === 'material'; });
-        var currency = po.currency || 'CNY';
-        var id = 'po' + index + '-material';
-
-        var rows = items.map(function (it, i) {
-            var name = it.item_name || it.short_name || it.item_code || '';
-            var spec = it.spec || '';
-            var quantity = Number(it.quantity || 0);
-            var amount = Number(it.amount || 0);
-
-            var attrs = ' data-kind="material" data-qty="' + quantity + '" data-amount="' + amount + '"'
-                + ' data-name="' + esc(name) + '" data-spec="' + esc(spec) + '"'
-                + ' data-price="' + Number(it.unit_price || 0) + '"'
-                + ' data-currency="' + esc(currency) + '" data-unit="' + esc(it.unit || '') + '"';
-
-            return '<tr' + attrs + '>'
-                + pickCell()
-                + '<td class="ctr row-no">' + (i + 1) + '</td>'
-                + '<td class="cell-name">' + esc(name) + '</td>'
-                + '<td>' + esc(spec) + '</td>'
-                + '<td class="num">' + qty(quantity) + '</td>'
-                + '<td class="num">' + money(it.unit_price) + '</td>'
-                + '<td class="num">' + money(amount) + '</td>'
-                + '</tr>';
-        }).join('');
-
-        if (!items.length) rows = '<tr><td colspan="7" class="empty">无材料明细</td></tr>';
-
-        return ''
-            + '<div class="list-head"><h3>材料（' + items.length + ' 项）</h3>'
-            + '<div class="list-tools"><span class="hint" data-role="hidden-hint"></span>'
-            + '<button class="btn btn-mini hide-picked-btn" type="button" data-table="' + id + '">隐藏勾选</button>'
-            + '<button class="btn btn-mini show-all-btn" type="button" data-table="' + id + '">显示全部</button>'
-            + '</div></div>'
-            + '<table class="po-table" id="' + id + '" data-kind="material">'
-            + '<thead><tr>'
-            + '<th class="ctr pick-col"><input type="checkbox" class="pick-all" title="全选 / 全不选"></th>'
-            + '<th class="ctr" style="width:44px">序号</th>'
-            + '<th>材料</th><th>规格</th>'
-            + '<th class="num" style="width:90px">用量</th>'
-            + '<th class="num" style="width:80px">单价</th>'
-            + '<th class="num" style="width:96px">金额</th>'
-            + '</tr></thead>'
-            + '<tbody>' + rows + '</tbody>'
-            + '<tfoot><tr class="total">'
-            + '<td class="pick-col"></td><td colspan="3">材料合计</td>'
-            + '<td class="num" data-role="qty">0</td><td></td>'
-            + '<td class="num" data-role="amount">0.00</td>'
-            + '</tr></tfoot>'
-            + '</table>';
-    }
-
-    function poBlock(po, index) {
-        var meta = [
-            ['供应商', po.supplier_name || '—'],
-            ['来源订单', po.source_order_number || '—'],
-            ['下单日期', day(po.order_date) || '—'],
-            ['预计到货', day(po.expected_date) || '—'],
-            ['币种', po.currency || 'CNY']
-        ].map(function (kv) {
-            return '<span>' + esc(kv[0]) + '：<b>' + esc(kv[1]) + '</b></span>';
-        }).join('');
-
-        return ''
-            + '<section class="po-block" data-freight="' + Number(po.freight_amount || 0) + '"'
-            + ' data-currency="' + esc(po.currency || 'CNY') + '">'
-            + '<div class="po-head">'
-            + '<h2>' + esc(po.po_number) + '</h2>'
-            + '<span class="sup">' + esc(po.supplier_name || '') + '</span>'
-            + '<span class="badge">' + esc(STATUS[po.status] || po.status) + '</span>'
-            + '</div>'
-            + '<div class="meta">' + meta + '</div>'
-            + productTable(po, index)
-            + materialTable(po, index)
-            + '<div class="note">本单货款 ' + money(po.goods_amount)
-            + ' ＋ 运费 ' + money(po.freight_amount) + ' ＝ <b>合计 ' + money(po.total_amount)
-            + ' ' + esc(po.currency || 'CNY') + '</b></div>'
-            + '</section>';
+            + '<button class="btn btn-mini hide-picked-btn" type="button" data-table="' + tableId + '">隐藏勾选</button>'
+            + '<button class="btn btn-mini show-all-btn" type="button" data-table="' + tableId + '">显示全部</button>'
+            + '</div></div>';
     }
 
     function render(pos) {
+        ALL_POS = pos;
+
         var numbers = pos.map(function (po) { return po.po_number; }).filter(function (v) { return !!v; });
-        var currencies = [];
+        var currencies = [], suppliers = [];
         pos.forEach(function (po) {
             var c = po.currency || 'CNY';
             if (currencies.indexOf(c) < 0) currencies.push(c);
+            var sup = po.supplier_name || '';
+            if (sup && suppliers.indexOf(sup) < 0) suppliers.push(sup);
         });
-
-        var body = pos.map(poBlock).join('');
         MULTI_CURRENCY = currencies.length > 1;
 
-        // 合并采购清单：同一物品跨单据合并数量，金额按币种分开算，方便一次性下单。
-        body += ''
+        document.getElementById('sheet').innerHTML = ''
+            + '<h1>采购合并单<span class="no">' + numbers.length + ' 张</span>'
+            + ' <span class="badge">' + esc(currencies.join(' / ')) + '</span></h1>'
+            + '<div class="meta">'
+            + '<span>单号：<b>' + esc(numbers.join(' / ')) + '</b></span>'
+            + '<span>供应商：<b>' + esc(suppliers.join(' / ') || '—') + '</b></span>'
+            + '<span>制表时间：' + esc(new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')) + '</span>'
+            + '</div>'
+            + '<div class="summary" id="summaryBar"></div>'
             + '<section class="po-block">'
-            + '<div class="po-head"><h2>合并采购清单</h2>'
-            + '<span class="sup">同款物品跨单合并；清单里也能勾选隐藏，只统计当前可见行</span></div>'
-            + '<div class="list-head"><h3>产品（按 SKU 合并）</h3>'
-            + '<div class="list-tools"><span class="hint" data-role="hidden-hint"></span>'
-            + '<button class="btn btn-mini hide-picked-btn" type="button" data-table="mergeProduct">隐藏勾选</button>'
-            + '<button class="btn btn-mini show-all-btn" type="button" data-table="mergeProduct">显示全部</button>'
-            + '</div></div>'
+            + listHead('产品（按 SKU 合并）', 'mergeProduct')
             + '<table id="mergeProduct">'
             + '<thead><tr>'
             + '<th class="ctr pick-col"><input type="checkbox" class="pick-all" title="全选 / 全不选"></th>'
@@ -395,11 +305,7 @@
             + '<td class="num" data-role="qty">0</td><td></td>'
             + '<td class="num" data-role="amount">0.00</td><td></td></tr></tfoot>'
             + '</table>'
-            + '<div class="list-head"><h3>材料（按规格合并）</h3>'
-            + '<div class="list-tools"><span class="hint" data-role="hidden-hint"></span>'
-            + '<button class="btn btn-mini hide-picked-btn" type="button" data-table="mergeMaterial">隐藏勾选</button>'
-            + '<button class="btn btn-mini show-all-btn" type="button" data-table="mergeMaterial">显示全部</button>'
-            + '</div></div>'
+            + listHead('材料（按规格合并）', 'mergeMaterial')
             + '<table id="mergeMaterial">'
             + '<thead><tr>'
             + '<th class="ctr pick-col"><input type="checkbox" class="pick-all" title="全选 / 全不选"></th>'
@@ -414,100 +320,24 @@
             + '<td class="num" data-role="qty">0</td><td></td>'
             + '<td class="num" data-role="amount">0.00</td><td></td></tr></tfoot>'
             + '</table>'
-            + '</section>';
-
-        document.getElementById('sheet').innerHTML = ''
-            + '<h1>采购合并单<span class="no">' + numbers.length + ' 张</span>'
-            + ' <span class="badge">' + esc(currencies.join(' / ')) + '</span></h1>'
-            + '<div class="meta">'
-            + numbers.map(function (n) { return '<span><b>' + esc(n) + '</b></span>'; }).join('')
-            + '<span>制表时间：' + esc(new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')) + '</span>'
-            + '</div>'
-            + '<div class="summary" id="summaryBar"></div>'
-            + body
+            + '</section>'
+            + '<div class="note">合并口径：同一 SKU（产品）/ 同一规格（材料）跨单合并，'
+            + '单价不一致时显示区间；合计只统计当前可见行。</div>'
             + '<div class="foot"><span>OrderAI · 采购合并单</span><span>' + esc(numbers.join(' / ')) + '</span></div>';
 
         refresh();
     }
 
-    // 每张表格独立重算：序号按可见行重排，合计只算可见行（隐藏的行不该出现在给厂家的数量里）。
+    // 两张表各自重算：序号按可见行重排、合计只算可见行（隐藏的行不该出现在给厂家的数量里），
+    // 顶部汇总直接取两张表的可见合计，保证上面的数字与清单合计永远一致。
     function refresh() {
-        document.querySelectorAll('table.po-table').forEach(function (table) {
-            var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr[data-qty]'));
-            var shown = 0, qtySum = 0, amountSum = 0, picked = 0;
-
-            rows.forEach(function (tr) {
-                if (tr.classList.contains('row-hidden')) return;
-                shown += 1;
-                var noEl = tr.querySelector('.row-no');
-                if (noEl) noEl.textContent = shown;
-                qtySum += Number(tr.getAttribute('data-qty') || 0);
-                amountSum += Number(tr.getAttribute('data-amount') || 0);
-                var box = tr.querySelector('.row-pick');
-                if (box && box.checked) picked += 1;
-            });
-
-            var qtyEl = table.querySelector('[data-role="qty"]');
-            if (qtyEl) qtyEl.textContent = qty(qtySum);
-            var amountEl = table.querySelector('[data-role="amount"]');
-            if (amountEl) amountEl.textContent = money(amountSum);
-
-            var head = table.previousElementSibling;
-            var hintEl = head ? head.querySelector('[data-role="hidden-hint"]') : null;
-            var hiddenCount = rows.length - shown;
-            if (hintEl) hintEl.textContent = hiddenCount > 0 ? ('已隐藏 ' + hiddenCount + ' 行') : '';
-
-            var allBox = table.querySelector('.pick-all');
-            if (allBox) {
-                allBox.checked = shown > 0 && picked === shown;
-                allBox.indeterminate = picked > 0 && picked < shown;
-                allBox.disabled = shown === 0;
-            }
-            var hideBtn = head ? head.querySelector('.hide-picked-btn') : null;
-            if (hideBtn) hideBtn.disabled = picked === 0;
-            var showBtn = head ? head.querySelector('.show-all-btn') : null;
-            if (showBtn) showBtn.disabled = hiddenCount === 0;
-        });
-
-        // 合并清单受「原始单据显隐」和「清单自身显隐」双重影响；
-        // 顶部汇总直接取它的可见合计，保证上面的数字与清单合计永远一致。
         var merged = renderMergedSummary();
 
-        // 运费按单据累加（同一单据只加一次），与本单是否隐藏行无关。
+        // 运费按单据累加，与清单里隐藏了哪些行无关。
         var freight = 0;
-        document.querySelectorAll('section.po-block[data-freight]').forEach(function (sec) {
-            freight += Number(sec.getAttribute('data-freight') || 0);
-        });
+        ALL_POS.forEach(function (po) { freight += Number(po.freight_amount || 0); });
 
         renderSummaryBar(merged.productQty, merged.productAmount, merged.materialQty, merged.materialAmount, freight, MULTI_CURRENCY);
-    }
-
-    function collectVisible(kind, keyOf, fields) {
-        var groups = {};
-        var order = [];
-
-        document.querySelectorAll('table.po-table[data-kind="' + kind + '"]').forEach(function (table) {
-            Array.prototype.slice.call(table.querySelectorAll('tbody tr[data-qty]')).forEach(function (tr) {
-                if (tr.classList.contains('row-hidden')) return;
-                var key = keyOf(tr);
-                var g = groups[key];
-                if (!g) {
-                    g = { key: key, qty: 0, amount: 0, pos: {}, prices: {} };
-                    fields.forEach(function (f) { g[f] = tr.getAttribute('data-' + f) || ''; });
-                    groups[key] = g;
-                    order.push(key);
-                }
-                g.qty += Number(tr.getAttribute('data-qty') || 0);
-                g.amount += Number(tr.getAttribute('data-amount') || 0);
-                var price = Number(tr.getAttribute('data-price') || 0);
-                if (price > 0) g.prices[price] = true;
-                var sec = tr.closest('.po-block');
-                var no = sec ? (sec.querySelector('.po-head h2') || {}).textContent : '';
-                if (no) g.pos[no] = true;
-            });
-        });
-
-        return order.map(function (k) { return groups[k]; });
     }
 
     // 合并行的单价：各来源行价格一致时直接显示；不一致时显示区间，
@@ -614,14 +444,12 @@
     }
 
     function renderMergedSummary() {
-        var products = collectVisible('product', function (tr) {
-            return (tr.getAttribute('data-sku') || '0') + '|' + (tr.getAttribute('data-name') || '')
-                + '|' + (tr.getAttribute('data-currency') || '');
+        var products = collectRows('product', function (row) {
+            return (row.sku || 0) + '|' + (row.name || '') + '|' + (row.currency || '');
         }, ['name', 'model', 'color', 'currency']);
 
-        var materials = collectVisible('material', function (tr) {
-            return (tr.getAttribute('data-name') || '') + '|' + (tr.getAttribute('data-spec') || '')
-                + '|' + (tr.getAttribute('data-currency') || '');
+        var materials = collectRows('material', function (row) {
+            return (row.name || '') + '|' + (row.spec || '') + '|' + (row.currency || '');
         }, ['name', 'spec', 'currency']);
 
         var p = fillTable('mergeProduct', products, [
