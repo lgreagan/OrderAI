@@ -102,6 +102,7 @@
         .list-head h3 { font-size: 13.5px; margin: 0; color: #374151; }
         .list-tools { display: flex; align-items: center; gap: 8px; }
         .hint { color: var(--muted); font-size: 12px; }
+        .ccy { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 3px; }
 
         table { width: 100%; border-collapse: collapse; }
         th, td { border: 1px solid var(--line); padding: 8px 10px; vertical-align: middle; }
@@ -235,6 +236,7 @@
             var amount = Number(it.amount || 0);
 
             var attrs = ' data-kind="product" data-qty="' + quantity + '" data-amount="' + amount + '"'
+                + ' data-price="' + Number(it.unit_price || 0) + '"'
                 + ' data-name="' + esc(name) + '" data-sku="' + (it.item_id || 0) + '"'
                 + ' data-currency="' + esc(currency) + '" data-model="' + esc(model) + '"'
                 + ' data-color="' + esc(color) + '" data-unit="' + esc(it.unit || '') + '"';
@@ -385,7 +387,7 @@
             + '<th class="ctr" style="width:44px">序号</th>'
             + '<th>产品中文名</th><th style="width:110px">型号</th><th style="width:100px">颜色</th>'
             + '<th class="num" style="width:96px">数量合计</th>'
-            + '<th class="num" style="width:80px">币种</th>'
+            + '<th class="num" style="width:80px">单价</th>'
             + '<th class="num" style="width:110px">金额合计</th>'
             + '<th class="num" style="width:90px">单据数</th>'
             + '</tr></thead><tbody></tbody>'
@@ -404,7 +406,7 @@
             + '<th class="ctr" style="width:44px">序号</th>'
             + '<th>材料</th><th>规格</th>'
             + '<th class="num" style="width:96px">用量合计</th>'
-            + '<th class="num" style="width:80px">币种</th>'
+            + '<th class="num" style="width:80px">单价</th>'
             + '<th class="num" style="width:110px">金额合计</th>'
             + '<th class="num" style="width:90px">单据数</th>'
             + '</tr></thead><tbody></tbody>'
@@ -490,13 +492,15 @@
                 var key = keyOf(tr);
                 var g = groups[key];
                 if (!g) {
-                    g = { key: key, qty: 0, amount: 0, pos: {} };
+                    g = { key: key, qty: 0, amount: 0, pos: {}, prices: {} };
                     fields.forEach(function (f) { g[f] = tr.getAttribute('data-' + f) || ''; });
                     groups[key] = g;
                     order.push(key);
                 }
                 g.qty += Number(tr.getAttribute('data-qty') || 0);
                 g.amount += Number(tr.getAttribute('data-amount') || 0);
+                var price = Number(tr.getAttribute('data-price') || 0);
+                if (price > 0) g.prices[price] = true;
                 var sec = tr.closest('.po-block');
                 var no = sec ? (sec.querySelector('.po-head h2') || {}).textContent : '';
                 if (no) g.pos[no] = true;
@@ -504,6 +508,28 @@
         });
 
         return order.map(function (k) { return groups[k]; });
+    }
+
+    // 合并行的单价：各来源行价格一致时直接显示；不一致时显示区间，
+    // 不用加权均价掩盖差价（同一规格不同厂家报价本来就该一眼看出来）。
+    function priceCell(g) {
+        var list = Object.keys(g.prices || {}).map(Number)
+            .filter(function (v) { return v > 0; })
+            .sort(function (a, b) { return a - b; });
+
+        var text = '—';
+        var tip = '';
+        if (list.length === 1) {
+            text = money(list[0]);
+        } else if (list.length > 1) {
+            text = money(list[0]) + '~' + money(list[list.length - 1]);
+            tip = '合并了 ' + list.length + ' 种单价';
+        }
+        // 多币种时单看数字分不清币种，补一个小的币种后缀；单币种保持干净。
+        var ccy = (MULTI_CURRENCY && g.currency)
+            ? ' <span class="ccy">' + esc(g.currency) + '</span>'
+            : '';
+        return '<td class="num" title="' + esc(tip) + '">' + text + ccy + '</td>';
     }
 
     // 合并清单中的一张表：按可见行重排序号、只累加可见行，并恢复上次的显隐与勾选。
@@ -539,7 +565,7 @@
                     + '<td class="ctr row-no">' + (hidden ? '' : shown) + '</td>'
                     + cells.map(function (c) { return c(g); }).join('')
                     + '<td class="num">' + qty(g.qty) + '</td>'
-                    + '<td class="num">' + esc(g.currency || '') + '</td>'
+                    + priceCell(g)
                     + '<td class="num">' + money(g.amount) + '</td>'
                     + '<td class="num">' + posCount + '</td>'
                     + '</tr>';
