@@ -62,11 +62,14 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*models.User,
 	return u, err
 }
 
-// List 账号列表（不含密码哈希）。
+// List 账号列表（不含密码哈希），顺带带出有效会话数用于显示在线状态。
 func (r *UserRepository) List(ctx context.Context) ([]models.User, error) {
 	rows, err := r.DB.QueryContext(ctx, `
-		SELECT id, username, display_name, role, status, last_login_at, created_at, updated_at
-		FROM users ORDER BY id ASC`)
+		SELECT u.id, u.username, u.display_name, u.role, u.status,
+		       u.last_login_at, u.created_at, u.updated_at,
+		       (SELECT COUNT(*) FROM user_sessions s
+		         WHERE s.user_id = u.id AND s.expires_at > NOW()) AS sessions
+		FROM users u ORDER BY u.id ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +80,7 @@ func (r *UserRepository) List(ctx context.Context) ([]models.User, error) {
 		var u models.User
 		var last sql.NullTime
 		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role,
-			&u.Status, &last, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			&u.Status, &last, &u.CreatedAt, &u.UpdatedAt, &u.SessionCount); err != nil {
 			return nil, err
 		}
 		if last.Valid {
@@ -111,6 +114,27 @@ func (r *UserRepository) Create(ctx context.Context, u *models.User) error {
 func (r *UserRepository) UpdatePassword(ctx context.Context, id uint64, hash string) error {
 	_, err := r.DB.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, hash, id)
 	return err
+}
+
+// UpdateProfile 更新姓名、角色与启用状态（不含密码）。
+func (r *UserRepository) UpdateProfile(
+	ctx context.Context,
+	id uint64,
+	displayName, role, status string,
+) error {
+	_, err := r.DB.ExecContext(ctx, `
+		UPDATE users SET display_name = ?, role = ?, status = ? WHERE id = ?`,
+		displayName, role, status, id,
+	)
+	return err
+}
+
+// CountActiveAdmins 启用状态的管理员数量，用于拦住「把最后一个管理员停用/降级」。
+func (r *UserRepository) CountActiveAdmins(ctx context.Context) (int, error) {
+	var n int
+	err := r.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'`).Scan(&n)
+	return n, err
 }
 
 // TouchLogin 记录最近登录时间。

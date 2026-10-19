@@ -216,6 +216,13 @@
                 <span>操作日志</span>
             </a>
 
+            {{if .current_user}}{{if .current_user.IsAdmin}}
+            <a href="/users" class="nav-item" data-page="users">
+                <span class="nav-icon">◉</span>
+                <span>用户管理</span>
+            </a>
+            {{end}}{{end}}
+
         </nav>
 
 

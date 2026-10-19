@@ -28,7 +28,8 @@ $(document).ready(function () {
         ["/finance", "finance"],
         ["/statistics", "statistics"],
         ["/settings", "settings"],
-        ["/operation-logs", "operation-logs"]
+        ["/operation-logs", "operation-logs"],
+        ["/users", "users"]
     ];
 
     const matched = navRoutes.find(function (route) {

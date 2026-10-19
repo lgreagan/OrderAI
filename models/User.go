@@ -13,6 +13,7 @@ type User struct {
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
+	SessionCount int        `json:"session_count"`
 }
 
 // IsAdmin 管理员可维护账号与系统设置。
@@ -26,6 +27,25 @@ func (u *User) Name() string {
 		return u.DisplayName
 	}
 	return u.Username
+}
+
+// RoleName 角色中文名。
+func (u *User) RoleName() string {
+	switch u.Role {
+	case UserRoleAdmin:
+		return "管理员"
+	case UserRoleStaff:
+		return "业务员"
+	}
+	return u.Role
+}
+
+// StatusName 状态中文名。
+func (u *User) StatusName() string {
+	if u.Status == UserStatusDisabled {
+		return "已停用"
+	}
+	return "启用中"
 }
 
 // Initial 头像用的首字（按字符取，中文不会被截断）。

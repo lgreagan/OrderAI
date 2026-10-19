@@ -575,7 +575,11 @@
 </div>
 
 <script>
-    var NEXT = {{printf "%q" .next}};
+    var NEXT = {{.next}};
+    // 兜底：只允许站内绝对路径，异常值一律回首页，避免跳到 "/%22" 这类不存在的地址
+    if (typeof NEXT !== 'string' || NEXT.charAt(0) !== '/' || NEXT.indexOf('//') === 0 || NEXT.indexOf('/login') === 0) {
+        NEXT = '/';
+    }
 
     (function () {
         var form = document.getElementById('loginForm');

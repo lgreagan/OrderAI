@@ -159,6 +159,7 @@ func main() {
 	shippingChannelService := services.NewShippingChannelService(shippingChannelRepo)
 	operationLogService := services.NewOperationLogService(operationLogRepo)
 	authService := services.NewAuthService(userRepo)
+	userService := services.NewUserService(userRepo)
 
 	// 首次启动没有任何账号时创建管理员，避免装完进不去。
 	if created, err := authService.EnsureDefaultAdmin(context.Background()); err != nil {
@@ -198,6 +199,7 @@ func main() {
 		shippingChannelService,
 		operationLogService,
 		authService,
+		userService,
 	)
 
 	port := cfg.AppPort

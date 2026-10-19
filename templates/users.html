@@ -1,0 +1,571 @@
+{{define "content"}}
+<div class="container-fluid px-0">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h4 class="mb-1">用户管理</h4>
+            <div class="text-secondary small">
+                给业务员、仓库等各开一个账号：停用后立即下线且无法登录，密码只能由管理员重置
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" id="refreshBtn">刷新</button>
+            <button class="btn btn-primary" id="createBtn">+ 新增账号</button>
+        </div>
+    </div>
+
+    <div id="messageArea"></div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-secondary small">账号总数</div>
+                    <div class="fs-4 fw-semibold" id="sumTotal">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-secondary small">启用中</div>
+                    <div class="fs-4 fw-semibold text-success" id="sumActive">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-secondary small">已停用</div>
+                    <div class="fs-4 fw-semibold text-secondary" id="sumDisabled">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-secondary small">当前在线</div>
+                    <div class="fs-4 fw-semibold text-primary" id="sumOnline">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="min-width:200px">账号</th>
+                            <th style="min-width:110px">角色</th>
+                            <th style="min-width:100px">状态</th>
+                            <th style="min-width:80px">在线</th>
+                            <th style="min-width:150px">最近登录</th>
+                            <th style="min-width:120px">创建时间</th>
+                            <th class="text-end" style="min-width:230px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userBody">
+                        <tr><td colspan="7" class="text-center text-secondary py-4">正在加载...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新增 / 编辑账号 -->
+<div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title" id="userModalTitle">新增账号</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger d-none" id="userModalError"></div>
+
+                <div class="mb-3">
+                    <label class="form-label">登录名 <span class="text-danger">*</span></label>
+                    <input class="form-control" id="fUsername" maxlength="32" placeholder="如 sales01 / warehouse">
+                    <div class="form-text">2-32 位，不能含空格；创建后不可修改。</div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">姓名</label>
+                    <input class="form-control" id="fDisplayName" maxlength="50" placeholder="如 张三 / 仓库小李">
+                    <div class="form-text">侧边栏头像旁显示的名字，留空则显示登录名。</div>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label">角色</label>
+                        <select class="form-select" id="fRole">
+                            <option value="staff">业务员</option>
+                            <option value="admin">管理员</option>
+                        </select>
+                        <div class="form-text">管理员能进用户管理与系统设置。</div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">状态</label>
+                        <select class="form-select" id="fStatus">
+                            <option value="active">启用</option>
+                            <option value="disabled">停用</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mt-3" id="passwordGroup">
+                    <label class="form-label">初始密码 <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input class="form-control" id="fPassword" maxlength="64" placeholder="至少 6 位">
+                        <button class="btn btn-outline-secondary" type="button" id="genPwdBtn">随机生成</button>
+                    </div>
+                    <div class="form-text">创建后把这串密码告诉本人，登录后可自行修改。</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="userSaveBtn">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 重置密码 -->
+<div class="modal fade" id="pwdModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title">重置密码</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger d-none" id="pwdModalError"></div>
+
+                <div class="alert alert-warning py-2 small" id="pwdTargetTip"></div>
+
+                <div class="mb-3">
+                    <label class="form-label">新密码</label>
+                    <div class="input-group">
+                        <input class="form-control" id="npPassword" maxlength="64" placeholder="至少 6 位">
+                        <button class="btn btn-outline-secondary" type="button" id="npGenBtn">随机生成</button>
+                    </div>
+                </div>
+
+                <div class="mb-1">
+                    <label class="form-label">确认新密码</label>
+                    <input class="form-control" id="npConfirm" maxlength="64">
+                </div>
+
+                <div class="form-text">
+                    重置后该账号在其它设备上的登录立即失效，需要重新登录。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="pwdSaveBtn">确认重置</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .user-cell {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .user-cell .avatar {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 34px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 600;
+        color: #fff;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        text-transform: uppercase;
+    }
+    .user-cell.disabled .avatar {
+        background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+    }
+    .user-cell .uname {
+        font-weight: 600;
+        line-height: 1.2;
+    }
+    .user-cell .usub {
+        font-size: 12px;
+        color: #94a3b8;
+    }
+    .badge-soft-admin {
+        background: #eef2ff;
+        color: #4338ca;
+    }
+    .badge-soft-staff {
+        background: #ecfeff;
+        color: #0e7490;
+    }
+    .badge-soft-active {
+        background: #ecfdf5;
+        color: #047857;
+    }
+    .badge-soft-disabled {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+    .badge-soft {
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    .online-dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #22c55e;
+        margin-right: 5px;
+        vertical-align: middle;
+    }
+    .table > tbody > tr.inactive > td {
+        opacity: .62;
+    }
+</style>
+
+<script>
+    $(function () {
+        const currentUserID = {{with .current_user}}{{.ID}}{{else}}0{{end}};
+
+        let USERS = [];
+        let editingID = 0;
+        let pwdTargetID = 0;
+        const userModal = new bootstrap.Modal(document.getElementById('userModal'));
+        const pwdModal = new bootstrap.Modal(document.getElementById('pwdModal'));
+
+        function esc(s) {
+            return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+
+        function fmtTime(v) {
+            if (!v) return '<span class="text-secondary">从未登录</span>';
+            const d = new Date(v);
+            if (isNaN(d.getTime())) return esc(v);
+            const p = n => String(n).padStart(2, '0');
+            return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+                ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+        }
+
+        function showMessage(text, type) {
+            $('#messageArea').html(
+                '<div class="alert alert-' + (type || 'success') + ' alert-dismissible fade show">' +
+                esc(text) +
+                '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'
+            );
+            if ((type || 'success') === 'success') {
+                setTimeout(function () { $('#messageArea').empty(); }, 4000);
+            }
+        }
+
+        // 重置密码后把明文密码亮出来，方便直接复述/复制给本人（只在这时显示一次）。
+        function showPwdResult(username, pwd) {
+            $('#messageArea').html(
+                '<div class="alert alert-warning alert-dismissible fade show d-flex flex-wrap align-items-center gap-2">' +
+                    '<span>已重置 <b>' + esc(username) + '</b> 的密码：</span>' +
+                    '<code class="px-2 py-1 bg-white rounded" id="newPwdText">' + esc(pwd) + '</code>' +
+                    '<button type="button" class="btn btn-sm btn-outline-dark" id="copyPwdBtn">复制密码</button>' +
+                    '<span class="small text-secondary">请转告本人，登录后可自行修改</span>' +
+                    '<button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>' +
+                '</div>'
+            );
+        }
+
+        $('#messageArea').on('click', '#copyPwdBtn', function () {
+            const pwd = $('#newPwdText').text();
+            const done = () => $(this).text('已复制').prop('disabled', true);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(pwd).then(done).catch(function () {});
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = pwd;
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+                document.body.removeChild(ta);
+            }
+        });
+
+        function randomPassword() {
+            const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let out = '';
+            const buf = new Uint32Array(10);
+            window.crypto.getRandomValues(buf);
+            for (let i = 0; i < 10; i++) {
+                out += chars[buf[i] % chars.length];
+            }
+            return out;
+        }
+
+        function render() {
+            const total = USERS.length;
+            const active = USERS.filter(u => u.status === 'active').length;
+            const online = USERS.filter(u => u.session_count > 0).length;
+
+            $('#sumTotal').text(total);
+            $('#sumActive').text(active);
+            $('#sumDisabled').text(total - active);
+            $('#sumOnline').text(online);
+
+            if (!total) {
+                $('#userBody').html('<tr><td colspan="7" class="text-center text-secondary py-4">还没有账号</td></tr>');
+                return;
+            }
+
+            const rows = USERS.map(function (u) {
+                const isSelf = u.id === currentUserID;
+                const disabled = u.status !== 'active';
+                const initial = (u.display_name || u.username || '?').trim().charAt(0);
+
+                const roleBadge = u.role === 'admin'
+                    ? '<span class="badge-soft badge-soft-admin">管理员</span>'
+                    : '<span class="badge-soft badge-soft-staff">业务员</span>';
+
+                const statusBadge = disabled
+                    ? '<span class="badge-soft badge-soft-disabled">已停用</span>'
+                    : '<span class="badge-soft badge-soft-active">启用中</span>';
+
+                const onlineCell = u.session_count > 0
+                    ? '<span class="online-dot"></span>' + u.session_count + ' 个会话'
+                    : '<span class="text-secondary">—</span>';
+
+                const toggleBtn = disabled
+                    ? '<button class="btn btn-sm btn-outline-success" data-act="enable" data-id="' + u.id + '">启用</button>'
+                    : '<button class="btn btn-sm btn-outline-secondary" data-act="disable" data-id="' + u.id + '"' +
+                      (isSelf ? ' disabled title="不能停用当前登录的账号"' : '') + '>停用</button>';
+
+                return '<tr class="' + (disabled ? 'inactive' : '') + '">' +
+                    '<td><div class="user-cell' + (disabled ? ' disabled' : '') + '">' +
+                        '<div class="avatar">' + esc(initial) + '</div>' +
+                        '<div><div class="uname">' + esc(u.username) +
+                            (isSelf ? ' <span class="badge bg-light text-secondary">当前登录</span>' : '') +
+                        '</div><div class="usub">' + esc(u.display_name || '未填姓名') + '</div></div>' +
+                    '</div></td>' +
+                    '<td>' + roleBadge + '</td>' +
+                    '<td>' + statusBadge + '</td>' +
+                    '<td class="small">' + onlineCell + '</td>' +
+                    '<td class="small">' + fmtTime(u.last_login_at) + '</td>' +
+                    '<td class="small">' + fmtTime(u.created_at) + '</td>' +
+                    '<td class="text-end">' +
+                        '<div class="btn-group btn-group-sm">' +
+                            '<button class="btn btn-outline-primary" data-act="edit" data-id="' + u.id + '">编辑</button>' +
+                            '<button class="btn btn-outline-primary" data-act="password" data-id="' + u.id + '">重置密码</button>' +
+                            toggleBtn +
+                        '</div>' +
+                    '</td>' +
+                '</tr>';
+            });
+
+            $('#userBody').html(rows.join(''));
+        }
+
+        async function load() {
+            try {
+                const res = await $.ajax({ url: '/api/users', dataType: 'json' });
+                USERS = res.data || [];
+                render();
+            } catch (err) {
+                $('#userBody').html(
+                    '<tr><td colspan="7" class="text-center text-danger py-4">' +
+                    esc(err.responseJSON?.message || '读取账号失败') + '</td></tr>'
+                );
+            }
+        }
+
+        function findUser(id) {
+            return USERS.find(u => u.id === id);
+        }
+
+        // ============ 新增 / 编辑 ============
+        function openCreate() {
+            editingID = 0;
+            $('#userModalTitle').text('新增账号');
+            $('#fUsername').val('').prop('disabled', false);
+            $('#fDisplayName').val('');
+            $('#fRole').val('staff');
+            $('#fStatus').val('active');
+            $('#fPassword').val('');
+            $('#passwordGroup').show();
+            $('#userModalError').addClass('d-none');
+            userModal.show();
+            setTimeout(function () { $('#fUsername').trigger('focus'); }, 300);
+        }
+
+        function openEdit(id) {
+            const u = findUser(id);
+            if (!u) return;
+            editingID = id;
+            $('#userModalTitle').text('编辑账号 · ' + u.username);
+            $('#fUsername').val(u.username).prop('disabled', true);
+            $('#fDisplayName').val(u.display_name || '');
+            $('#fRole').val(u.role);
+            $('#fStatus').val(u.status);
+            $('#passwordGroup').hide();
+            $('#userModalError').addClass('d-none');
+            userModal.show();
+        }
+
+        $('#createBtn').on('click', openCreate);
+        $('#refreshBtn').on('click', load);
+
+        $('#genPwdBtn').on('click', function () {
+            $('#fPassword').val(randomPassword());
+        });
+
+        $('#userSaveBtn').on('click', async function () {
+            const username = $('#fUsername').val().trim();
+            const displayName = $('#fDisplayName').val().trim();
+            const role = $('#fRole').val();
+            const status = $('#fStatus').val();
+            const password = $('#fPassword').val();
+
+            const errBox = $('#userModalError');
+            function fail(msg) {
+                errBox.text(msg).removeClass('d-none');
+            }
+            errBox.addClass('d-none');
+
+            if (!editingID && !username) return fail('请填写登录名');
+            if (!editingID && password.length < 6) return fail('初始密码至少 6 位');
+
+            const btn = $(this).prop('disabled', true).text('保存中...');
+            try {
+                let res;
+                if (editingID) {
+                    res = await $.ajax({
+                        url: '/api/users/' + editingID,
+                        method: 'PUT',
+                        contentType: 'application/json',
+                        dataType: 'json',
+                        data: JSON.stringify({ display_name: displayName, role: role, status: status })
+                    });
+                } else {
+                    res = await $.ajax({
+                        url: '/api/users',
+                        method: 'POST',
+                        contentType: 'application/json',
+                        dataType: 'json',
+                        data: JSON.stringify({
+                            username: username,
+                            display_name: displayName,
+                            role: role,
+                            status: status,
+                            password: password
+                        })
+                    });
+                }
+                if (!res.success) throw new Error(res.message || '保存失败');
+                userModal.hide();
+                showMessage(res.message || '已保存');
+                await load();
+            } catch (err) {
+                fail(err.responseJSON?.message || err.message || '保存失败');
+            } finally {
+                btn.prop('disabled', false).text('保存');
+            }
+        });
+
+        // ============ 停用 / 启用 ============
+        $('#userBody').on('click', 'button[data-act]', async function () {
+            const id = Number($(this).data('id'));
+            const act = $(this).data('act');
+            const u = findUser(id);
+            if (!u) return;
+
+            if (act === 'edit') return openEdit(id);
+            if (act === 'password') return openPassword(id);
+
+            const nextStatus = act === 'enable' ? 'active' : 'disabled';
+            if (act === 'disable' && !confirm('停用「' + u.username + '」后该账号立即下线，且无法再登录。确定停用？')) {
+                return;
+            }
+
+            const btn = $(this).prop('disabled', true);
+            try {
+                const res = await $.ajax({
+                    url: '/api/users/' + id,
+                    method: 'PUT',
+                    contentType: 'application/json',
+                    dataType: 'json',
+                    data: JSON.stringify({ role: u.role, status: nextStatus, display_name: u.display_name || '' })
+                });
+                if (!res.success) throw new Error(res.message || '操作失败');
+                showMessage(res.message || '已保存');
+                await load();
+            } catch (err) {
+                showMessage(err.responseJSON?.message || err.message || '操作失败', 'danger');
+                btn.prop('disabled', false);
+            }
+        });
+
+        // ============ 重置密码 ============
+        function openPassword(id) {
+            const u = findUser(id);
+            if (!u) return;
+            pwdTargetID = id;
+            $('#pwdTargetTip').html(
+                (id === currentUserID ? '即将重置<b>你自己（' : '即将重置账号 <b>') +
+                esc(u.username) + '</b> 的密码。'
+            );
+            $('#npPassword').val('');
+            $('#npConfirm').val('');
+            $('#pwdModalError').addClass('d-none');
+            pwdModal.show();
+            setTimeout(function () { $('#npPassword').trigger('focus'); }, 300);
+        }
+
+        $('#npGenBtn').on('click', function () {
+            const pwd = randomPassword();
+            $('#npPassword').val(pwd);
+            $('#npConfirm').val(pwd);
+        });
+
+        $('#pwdSaveBtn').on('click', async function () {
+            const pwd = $('#npPassword').val();
+            const confirmPwd = $('#npConfirm').val();
+            const errBox = $('#pwdModalError');
+
+            if (pwd.length < 6) return errBox.text('新密码至少 6 位').removeClass('d-none');
+            if (pwd !== confirmPwd) return errBox.text('两次输入的密码不一致').removeClass('d-none');
+            errBox.addClass('d-none');
+
+            const btn = $(this).prop('disabled', true).text('提交中...');
+            try {
+                const res = await $.ajax({
+                    url: '/api/users/' + pwdTargetID + '/password',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    dataType: 'json',
+                    data: JSON.stringify({ password: pwd })
+                });
+                if (!res.success) throw new Error(res.message || '重置失败');
+                pwdModal.hide();
+                const target = findUser(pwdTargetID);
+                showPwdResult(target ? target.username : '', pwd);
+                await load();
+            } catch (err) {
+                errBox.text(err.responseJSON?.message || err.message || '重置失败').removeClass('d-none');
+            } finally {
+                btn.prop('disabled', false).text('确认重置');
+            }
+        });
+
+        load();
+    });
+</script>
+{{end}}

@@ -38,6 +38,7 @@ var layoutPages = []string{
 	"statistics.html",
 	"finance.html",
 	"settings.html",
+	"users.html",
 	"product_categories.html",
 	"declaration_templates.html",
 	"operation_logs.html",
@@ -75,6 +76,7 @@ func Register(
 	shippingChannelService *services.ShippingChannelService,
 	operationLogService *services.OperationLogService,
 	authService *services.AuthService,
+	userService *services.UserService,
 ) {
 
 	e.Renderer = NewTemplateRenderer("templates")
@@ -522,6 +524,19 @@ func Register(
 	e.GET("/api/operation-logs/export", operationLogController.Export)
 	e.GET("/api/operation-logs/:id", operationLogController.Get)
 	e.DELETE("/api/operation-logs", operationLogController.Cleanup)
+
+	// ========================================
+	// 用户管理（仅管理员）
+	// ========================================
+
+	userController := controllers.NewUserController(userService)
+	requireAdmin := middleware.RequireAdmin()
+
+	e.GET("/users", userController.Page, requireAdmin)
+	e.GET("/api/users", userController.List, requireAdmin)
+	e.POST("/api/users", userController.Create, requireAdmin)
+	e.PUT("/api/users/:id", userController.Update, requireAdmin)
+	e.POST("/api/users/:id/password", userController.ResetPassword, requireAdmin)
 }
 
 // maxMergedPOIDs 限制合并单最多打印多少张，避免误勾全表生成超长页面。
