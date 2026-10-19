@@ -14,7 +14,7 @@
 --   也一条都不会被删。此外脚本开头还有一道整体拦截，到点后运行会直接报错退出。
 --   若确需清空正式库，请先确认备份，再自行调整 @CUTOFF。
 --
--- 保留（主数据 / 字典 / 模板，共 10 张表，本脚本不涉及）
+-- 保留（主数据 / 字典 / 模板 / 账号，共 11 张表，本脚本不涉及）
 --   skus                   产品 SKU 主数据
 --   product_categories     报关品类（申报要素主数据）
 --   materials              材料主数据（包材 / 原材料）
@@ -25,8 +25,9 @@
 --   warehouse_addresses    仓库地址库（FBA）
 --   declaration_templates  报关资料模板
 --   app_settings           系统设置
+--   users                  登录账号（保留，避免清库后默认口令复活）
 --
--- 清空（业务流水，共 16 张表）
+-- 清空（业务流水 / 登录会话，共 17 张表）
 --   orders / order_items / ai_results / order_item_matches
 --   shipments / shipment_items / declaration_records
 --   inventory_transactions
@@ -34,6 +35,7 @@
 --   production_orders / production_order_items
 --   proforma_invoices / proforma_invoice_items
 --   payments / operation_logs
+--   user_sessions          登录会话（清掉后所有人需重新登录）
 --
 -- 说明
 --   * 相关外键均为 ON DELETE CASCADE，删除顺序按「子表 → 父表」排列，
@@ -105,6 +107,11 @@ DELETE FROM proforma_invoices      WHERE created_at < @CUTOFF;
 DELETE FROM payments       WHERE created_at < @CUTOFF;
 DELETE FROM operation_logs WHERE created_at < @CUTOFF;
 
+-- ---------- 登录会话 ----------
+-- users 是账号主数据，保留；这里只清会话，正式上线后所有人（含管理员）重新登录。
+-- user_sessions 主键 token 为 CHAR(64)、无自增，不需要 AUTO_INCREMENT 归位。
+DELETE FROM user_sessions  WHERE created_at < @CUTOFF;
+
 COMMIT;
 
 -- ========================================
@@ -165,4 +172,6 @@ SET SQL_SAFE_UPDATES = @OLD_SAFE_UPDATES;
 -- UNION ALL SELECT 'shipping_channels',        COUNT(*) FROM shipping_channels
 -- UNION ALL SELECT 'warehouse_addresses',      COUNT(*) FROM warehouse_addresses
 -- UNION ALL SELECT 'declaration_templates',    COUNT(*) FROM declaration_templates
--- UNION ALL SELECT 'app_settings',             COUNT(*) FROM app_settings;
+-- UNION ALL SELECT 'app_settings',             COUNT(*) FROM app_settings
+-- UNION ALL SELECT 'users',                    COUNT(*) FROM users
+-- UNION ALL SELECT 'user_sessions',            COUNT(*) FROM user_sessions;

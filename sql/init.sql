@@ -723,4 +723,148 @@ CREATE TABLE IF NOT EXISTS operation_logs (
     KEY idx_success (success),
     KEY idx_operator (operator),
     KEY idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='关键操作日志';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='关键操作日志';
+-- ----------------------------------------
+-- 报关品类(申报要素主数据)
+-- ----------------------------------------
+CREATE TABLE IF NOT EXISTS product_categories (
+    id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    code          VARCHAR(50)  NOT NULL DEFAULT '' COMMENT '品类编码',
+    name_en       VARCHAR(255) NOT NULL DEFAULT '' COMMENT '产品英文品名(报关)',
+    name_zh       VARCHAR(255) NOT NULL DEFAULT '' COMMENT '产品中文品名',
+    material      VARCHAR(100) NOT NULL DEFAULT '' COMMENT '材质',
+    hs_code       VARCHAR(50)  NOT NULL DEFAULT '' COMMENT '海关编码',
+    purpose       VARCHAR(100) NOT NULL DEFAULT '' COMMENT '用途',
+    brand         VARCHAR(100) NOT NULL DEFAULT '无' COMMENT '品牌',
+    model         VARCHAR(100) NOT NULL DEFAULT '无' COMMENT '型号',
+    product_url   VARCHAR(500) NOT NULL DEFAULT '' COMMENT '产品链接',
+    declare_price DECIMAL(15,4) NOT NULL DEFAULT 0 COMMENT '默认申报单价',
+    image         VARCHAR(500) NOT NULL DEFAULT '' COMMENT '默认图片',
+    remark        VARCHAR(500) NOT NULL DEFAULT '',
+    status        VARCHAR(20)  NOT NULL DEFAULT 'active',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_pc_code (code),
+    KEY idx_pc_name_zh (name_zh)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='报关品类(申报要素主数据)';
+
+-- ----------------------------------------
+-- 报关资料模板
+-- ----------------------------------------
+CREATE TABLE IF NOT EXISTS declaration_templates (
+    id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    name        VARCHAR(100) NOT NULL DEFAULT '',
+    country     VARCHAR(20)  NOT NULL DEFAULT '' COMMENT 'DE/UK...',
+    carrier     VARCHAR(50)  NOT NULL DEFAULT '' COMMENT '海运/空运/卡派',
+    ship_type   VARCHAR(30)  NOT NULL DEFAULT '',
+    file_path   VARCHAR(300) NOT NULL DEFAULT '' COMMENT 'excel/templates/xxx.xlsx',
+    source_file VARCHAR(300) NOT NULL DEFAULT '' COMMENT '原始上传 .xls',
+    mapping     JSON DEFAULT NULL COMMENT '抬头单元格 + 明细列映射',
+    remark      VARCHAR(300) NOT NULL DEFAULT '',
+    status      VARCHAR(20)  NOT NULL DEFAULT 'active',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_dt_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='报关资料模板';
+
+-- ----------------------------------------
+-- 货代渠道字典
+-- ----------------------------------------
+CREATE TABLE IF NOT EXISTS shipping_channels (
+    id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    name       VARCHAR(100) NOT NULL DEFAULT '',
+    country    VARCHAR(20)  NOT NULL DEFAULT '' COMMENT 'DE/UK/US...',
+    sort_order INT NOT NULL DEFAULT 0,
+    status     VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sc_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='货代渠道字典';
+
+-- ----------------------------------------
+-- 仓库地址库(FBA)
+-- ----------------------------------------
+CREATE TABLE IF NOT EXISTS warehouse_addresses (
+    id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    short_name    VARCHAR(100) NOT NULL DEFAULT '' COMMENT '地址简称(模板下拉用)',
+    code          VARCHAR(50)  NOT NULL DEFAULT '' COMMENT '地址编码',
+    fba_code      VARCHAR(50)  NOT NULL DEFAULT '' COMMENT 'FBA仓库代码',
+    contact       VARCHAR(100) NOT NULL DEFAULT '',
+    company       VARCHAR(200) NOT NULL DEFAULT '',
+    tel           VARCHAR(50)  NOT NULL DEFAULT '',
+    mobile        VARCHAR(50)  NOT NULL DEFAULT '',
+    address1      VARCHAR(300) NOT NULL DEFAULT '',
+    address2      VARCHAR(300) NOT NULL DEFAULT '',
+    address3      VARCHAR(300) NOT NULL DEFAULT '',
+    city          VARCHAR(100) NOT NULL DEFAULT '',
+    state         VARCHAR(100) NOT NULL DEFAULT '',
+    country       VARCHAR(50)  NOT NULL DEFAULT '',
+    zip           VARCHAR(30)  NOT NULL DEFAULT '',
+    declare_extra TEXT COMMENT '报关附注多行文本(如 Anmelder:/Declarant: 整段)',
+    vat_no        VARCHAR(50)  NOT NULL DEFAULT '' COMMENT 'VAT/EORI',
+    status        VARCHAR(20)  NOT NULL DEFAULT 'active',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_wa_short_name (short_name),
+    KEY idx_wa_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='仓库地址库(FBA)';
+
+-- ----------------------------------------
+-- 报关资料导出留档
+-- ----------------------------------------
+CREATE TABLE IF NOT EXISTS declaration_records (
+    id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    shipment_id   BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '发货单 ID',
+    template_id   BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '导出时使用的报关模板',
+    template_name VARCHAR(100) NOT NULL DEFAULT '',
+    order_no      VARCHAR(100) NOT NULL DEFAULT '',
+    file_name     VARCHAR(300) NOT NULL DEFAULT '' COMMENT '下载文件名',
+    line_count    INT NOT NULL DEFAULT 0 COMMENT '明细行数',
+    carton_sum    DECIMAL(15,3) NOT NULL DEFAULT 0 COMMENT '总箱数',
+    doc           JSON DEFAULT NULL COMMENT '导出时的报关资料快照(DeclarationDoc)',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_dr_shipment (shipment_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='报关资料导出留档';
+
+-- ----------------------------------------
+-- 登录账号与会话
+--   密码只存 bcrypt 哈希；token 存服务端，重启不掉线。
+--   首次启动若 users 为空，程序会自动创建 admin 管理员。
+-- ----------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+    id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    username      VARCHAR(50)  NOT NULL COMMENT '登录名',
+    password_hash VARCHAR(255) NOT NULL COMMENT 'bcrypt 哈希',
+    display_name  VARCHAR(50)  NOT NULL DEFAULT '' COMMENT '显示名',
+    role          VARCHAR(20)  NOT NULL DEFAULT 'staff' COMMENT 'admin / staff',
+    status        VARCHAR(20)  NOT NULL DEFAULT 'active' COMMENT 'active / disabled',
+    last_login_at DATETIME NULL DEFAULT NULL,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_users_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户账号';
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    token      CHAR(64) NOT NULL,
+    user_id    BIGINT UNSIGNED NOT NULL,
+    ip         VARCHAR(64)  NOT NULL DEFAULT '',
+    user_agent VARCHAR(255) NOT NULL DEFAULT '',
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (token),
+    KEY idx_sessions_user (user_id),
+    KEY idx_sessions_expires (expires_at),
+    CONSTRAINT fk_sessions_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='登录会话';
