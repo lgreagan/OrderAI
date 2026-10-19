@@ -104,6 +104,7 @@
         <div class="empty">正在加载…</div>
     </div>
 
+<script src="/web/js/order-i18n.js"></script>
 <script>
     var PO_ID = {{if .id}}{{.id}}{{else}}0{{end}};
 
@@ -127,13 +128,24 @@
             var res = await fetch('/api/purchase-orders/' + PO_ID);
             var json = await res.json();
             if (!json.success) throw new Error(json.message || '读取采购单失败');
-            render(json.data);
+
+            var po = json.data;
+            // 来源订单上带着国家与运输方式，和截图页一样显示出来（打印给供应商看）。
+            var order = null;
+            if (po.source_order_id) {
+                try {
+                    var o = await fetch('/api/orders/' + po.source_order_id).then(function (r) { return r.json(); });
+                    if (o && o.success) order = o.data;
+                } catch (e) { /* 忽略 */ }
+            }
+            await OrderI18N.ready;
+            render(po, order);
         } catch (err) {
             sheet.innerHTML = '<div class="empty">' + esc(err.message || '读取失败') + '</div>';
         }
     }
 
-    function render(po) {
+    function render(po, order) {
         var items = po.items || [];
         // 产品与材料分列，避免混在一起。
         var products = items.filter(function (it) { return it.item_type !== 'material'; });
@@ -193,6 +205,8 @@
         var meta = [
             ['供应商', po.supplier_name || '—'],
             ['来源订单', po.source_order_number || '—'],
+            ['国家', order ? (OrderI18N.country(order.country) || '—') : '—'],
+            ['运输方式', order ? (OrderI18N.shipping(order.shipping_method) || '—') : '—'],
             ['下单日期', day(po.order_date) || '—'],
             ['预计到货', day(po.expected_date) || '—'],
             ['币种', po.currency || 'CNY']

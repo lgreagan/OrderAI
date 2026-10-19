@@ -88,6 +88,7 @@
         <div class="empty">正在加载…</div>
     </div>
 
+<script src="/web/js/order-i18n.js"></script>
 <script>
     var MO_ID = {{if .id}}{{.id}}{{else}}0{{end}};
 
@@ -123,7 +124,9 @@
                 getJSON('/api/production-orders/' + MO_ID),
                 getJSON('/api/skus'),
                 getJSON('/api/product-match-rules'),
-                getJSON('/api/product-bom')
+                getJSON('/api/product-bom'),
+                // 国家 / 运输方式的中文名在系统设置里维护，渲染前一定要已应用。
+                OrderI18N.ready
             ];
             var results = await Promise.all(tasks);
             if (!results[0].success) throw new Error(results[0].message || '读取生产单失败');
@@ -185,8 +188,8 @@
 
         var meta = [
             ['客户', order ? (order.customer || '—') : '—'],
-            ['国家', order ? (order.country || '—') : '—'],
-            ['运输方式', order ? (order.shipping_method || '—') : '—'],
+            ['国家', order ? (OrderI18N.country(order.country) || '—') : '—'],
+            ['运输方式', order ? (OrderI18N.shipping(order.shipping_method) || '—') : '—'],
             ['来源', mo.source_purchase_number ? ('采购单 ' + mo.source_purchase_number) : (mo.source_order_number || '—')],
             ['作业类型', ({ produce: '投料生产', pack: '包装装箱', none: '只记录' })[mo.work_type] || '投料生产'],
             ['计划日期', day(mo.plan_date) || '—'],
