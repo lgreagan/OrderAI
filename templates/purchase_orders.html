@@ -415,11 +415,16 @@
                 (skus.data || []).forEach(s => allItems.push({
                     type: 'sku', id: s.id, code: s.sku_code,
                     name: s.short_name || s.product_name_zh || s.product_name,
+                    // 与「载入建议」同口径：产品行的规格列存型号。
+                    spec: s.model || '',
                     unit: s.unit || 'pcs', price: Number(s.price) || 0
                 }));
                 (mats.data || []).forEach(m => allItems.push({
                     type: 'material', id: m.id, code: m.code,
                     name: m.short_name || m.name_zh || m.name,
+                    // 材料规格必须从材料库带过来，否则手工加的行是空规格，
+                    // 会和自动带出的同一材料分成两行、按规格统计里还落成「未填规格」。
+                    spec: m.spec || '',
                     unit: m.unit || 'pcs', price: Number(m.price) || 0
                 }));
                 $('#itemPicker').html('<option value="">选择产品 / 材料添加一行…</option>' + allItems.map((it, i) =>
@@ -682,9 +687,18 @@
             const pick = $('#itemPicker').val();
             if (pick === '') { alert('请先选择产品或材料'); return; }
             const it = allItems[Number(pick)];
+            // 同一产品/材料已经在明细里时不再加第二行：两行同名同规格会让合计、
+            // 收货与按规格统计各自为政（曾经出现过一行有规格、一行空规格的重复单）。
+            const dup = (state.po.items || []).find(x =>
+                x.item_type === it.type && Number(x.item_id) === Number(it.id));
+            if (dup) {
+                alert('「' + it.name + '」已在明细中，请直接在上面的行里修改数量。');
+                $('#itemPicker').val('');
+                return;
+            }
             state.po.items.push({
                 item_type: it.type, item_id: it.id, item_code: it.code,
-                item_name: it.name, short_name: it.name, spec: '', unit: it.unit,
+                item_name: it.name, short_name: it.name, spec: it.spec || '', unit: it.unit,
                 // 手工加行没有建议量，采购量同样默认 0，由采购员按实际填写。
                 required_quantity: 0, suggested_quantity: 0, quantity: 0,
                 unit_price: it.price, amount: 0, received_quantity: 0, remark: ''
