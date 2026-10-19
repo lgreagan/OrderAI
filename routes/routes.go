@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"OrderAI/config"
@@ -47,6 +48,7 @@ var standalonePages = []string{
 	"purchase_order_print.html",
 	"production_order_print.html",
 	"purchase_order_screen.html",
+	"purchase_order_merged.html",
 	"production_order_screen.html",
 	"purchase_report.html",
 	"production_report.html",
@@ -215,6 +217,13 @@ func Register(
 	e.GET("/purchase-orders/report", func(c echo.Context) error {
 		return c.Render(http.StatusOK, "purchase_report.html", map[string]any{
 			"title": "采购报表",
+		})
+	})
+	// 合并打印 / 截图：勾选多张采购单后在同一个页面里合并展示。
+	e.GET("/purchase-orders/merged", func(c echo.Context) error {
+		return c.Render(http.StatusOK, "purchase_order_merged.html", map[string]any{
+			"title": "采购合并单",
+			"ids":   normalizeIDList(c.QueryParam("ids")),
 		})
 	})
 	e.GET("/purchase-orders/:id/print", func(c echo.Context) error {
@@ -497,6 +506,38 @@ func Register(
 	e.GET("/api/operation-logs/export", operationLogController.Export)
 	e.GET("/api/operation-logs/:id", operationLogController.Get)
 	e.DELETE("/api/operation-logs", operationLogController.Cleanup)
+}
+
+// maxMergedPOIDs 限制合并单最多打印多少张，避免误勾全表生成超长页面。
+const maxMergedPOIDs = 50
+
+// normalizeIDList 把 ids 查询参数清洗成「正整数,正整数」形式。
+//
+// 合并页会把这个字符串直接注入脚本，所以只保留数字与逗号，
+// 防止任何非数字内容带进页面。
+func normalizeIDList(raw string) string {
+	result := make([]string, 0, 8)
+	seen := map[string]bool{}
+
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, err := strconv.ParseUint(part, 10, 64); err != nil {
+			continue
+		}
+		if seen[part] {
+			continue
+		}
+		seen[part] = true
+		result = append(result, part)
+		if len(result) >= maxMergedPOIDs {
+			break
+		}
+	}
+
+	return strings.Join(result, ",")
 }
 
 // TemplateRenderer 渲染 templates 目录下的页面。

@@ -6,6 +6,8 @@
             <div class="text-secondary small">采购单可人工维护，采购量可大于客户需求（凑量更划算），到货入库后形成库存</div>
         </div>
         <div class="d-flex gap-2">
+            <button class="btn btn-outline-success" id="mergePOBtn" disabled
+                    title="勾选左侧复选框选中多张采购单，合并成一张单打印或截图">合并显示</button>
             <button class="btn btn-outline-secondary" id="reportPOBtn">汇总报表</button>
             <button class="btn btn-outline-primary" id="pushDownBtn">从订单下推</button>
             <button class="btn btn-primary" id="addPOBtn">+ 新建采购单</button>
@@ -51,6 +53,10 @@
                 <table class="table table-hover align-middle">
                     <thead class="table-light">
                         <tr>
+                            <th style="width:40px" class="text-center">
+                                <input type="checkbox" class="form-check-input" id="poPickAll"
+                                       title="全选 / 全不选">
+                            </th>
                             <th>采购单号</th>
                             <th>供应商</th>
                             <th>来源订单</th>
@@ -65,7 +71,7 @@
                         </tr>
                     </thead>
                     <tbody id="poBody">
-                        <tr><td colspan="11" class="text-center text-secondary py-4">正在加载...</td></tr>
+                        <tr><td colspan="12" class="text-center text-secondary py-4">正在加载...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -320,7 +326,7 @@
         };
 
         async function loadPOList() {
-            $('#poBody').html('<tr><td colspan="11" class="text-center py-4">正在加载...</td></tr>');
+            $('#poBody').html('<tr><td colspan="12" class="text-center py-4">正在加载...</td></tr>');
             try {
                 const result = await $.getJSON(api, {
                     keyword: $('#keyword').val().trim(),
@@ -329,12 +335,16 @@
                 if (!result.success) throw new Error(result.message || '读取失败');
                 poList = result.data || [];
                 if (!poList.length) {
-                    $('#poBody').html('<tr><td colspan="11" class="text-center text-secondary py-4">暂无采购单</td></tr>');
+                    $('#poBody').html('<tr><td colspan="12" class="text-center text-secondary py-4">暂无采购单</td></tr>');
                     $('#poCount').text('共 0 张采购单');
+                    syncMergeButton();
                     return;
                 }
                 $('#poBody').html(poList.map(p => `
                     <tr>
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input po-pick" data-id="${p.id}">
+                        </td>
                         <td class="fw-semibold">${esc(p.po_number)}</td>
                         <td>${esc(p.supplier_name)}</td>
                         <td>${esc(p.source_order_number)}</td>
@@ -355,11 +365,30 @@
                     </tr>
                 `).join(''));
                 $('#poCount').text(`共 ${poList.length} 张采购单`);
+                $('#poPickAll').prop({ checked: false, indeterminate: false });
+                syncMergeButton();
             } catch (err) {
                 $('#poBody').html(
-                    `<tr><td colspan="11" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
+                    `<tr><td colspan="12" class="text-danger text-center py-4">${esc(err.responseJSON?.message || err.message || '读取失败')}</td></tr>`
                 );
             }
+        }
+
+        // 勾选的采购单 id（按列表顺序，避免顺序漂移）
+        function pickedPOIDs() {
+            const ids = [];
+            $('#poBody .po-pick:checked').each(function () {
+                ids.push(Number($(this).data('id')));
+            });
+            return ids;
+        }
+
+        // 没勾选时按钮置灰，勾上后显示已选数量，避免误点。
+        function syncMergeButton() {
+            const count = pickedPOIDs().length;
+            $('#mergePOBtn')
+                .prop('disabled', count === 0)
+                .text(count > 0 ? `合并显示（${count}）` : '合并显示');
         }
 
         async function loadOrders() {
@@ -857,6 +886,30 @@
 
         $('#poBody').on('click', '.screen-po', function () {
             window.open(`/purchase-orders/${$(this).data('id')}/screen`, '_blank');
+        });
+
+        // 勾选联动：行勾选变化时更新表头全选状态与「合并显示」按钮。
+        $('#poBody').on('change', '.po-pick', function () {
+            const total = $('#poBody .po-pick').length;
+            const picked = $('#poBody .po-pick:checked').length;
+            $('#poPickAll').prop({
+                checked: total > 0 && picked === total,
+                indeterminate: picked > 0 && picked < total
+            });
+            syncMergeButton();
+        });
+
+        $('#poPickAll').on('change', function () {
+            const checked = $(this).prop('checked');
+            $('#poBody .po-pick').prop('checked', checked);
+            syncMergeButton();
+        });
+
+        // 合并显示：把勾选的采购单放到同一页面，可直接打印或截图，末尾附合并采购清单。
+        $('#mergePOBtn').on('click', function () {
+            const ids = pickedPOIDs();
+            if (!ids.length) { alert('请先勾选要合并的采购单'); return; }
+            window.open(`/purchase-orders/merged?ids=${ids.join(',')}`, '_blank');
         });
 
         $('#screenPOBtn').on('click', function () {
