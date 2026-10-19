@@ -81,6 +81,24 @@ func (ctl *SettingsController) Delete(c echo.Context) error {
 	})
 }
 
+// I18N 返回截图 / 打印使用的中英文对照字典。
+//
+// 返回的是设置里保存的原文（一行一条「英文=中文」），
+// 未维护时为空串，由前端 web/js/order-i18n.js 的内置字典兜底。
+//
+// GET /api/i18n
+func (ctl *SettingsController) I18N(c echo.Context) error {
+	country, shipping := ctl.Service.I18NDictionary(c.Request().Context())
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"success": true,
+		"data": map[string]any{
+			"country":  country,
+			"shipping": shipping,
+		},
+	})
+}
+
 // SystemInfo 返回只读的运行时信息。
 //
 // GET /api/system-info

@@ -203,7 +203,9 @@
         try {
             var res = await Promise.all([
                 getJSON('/api/purchase-orders/' + PO_ID),
-                getJSON('/api/skus')
+                getJSON('/api/skus'),
+                // 国家 / 运输方式的中文名在系统设置里维护。
+                OrderI18N.ready
             ]);
             if (!res[0].success) throw new Error(res[0].message || '读取采购单失败');
             (res[1].data || []).forEach(function (s) { SKUS[s.id] = s; });

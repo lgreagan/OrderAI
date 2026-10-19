@@ -184,7 +184,9 @@
             var res = await Promise.all([
                 getJSON('/api/production-orders/' + MO_ID),
                 getJSON('/api/skus'),
-                getJSON('/api/product-match-rules')
+                getJSON('/api/product-match-rules'),
+                // 国家 / 运输方式的中文名在系统设置里维护，并行拉取，渲染前一定已应用。
+                OrderI18N.ready
             ]);
             if (!res[0].success) throw new Error(res[0].message || '读取生产单失败');
             (res[1].data || []).forEach(function (s) { SKUS[s.id] = s; });

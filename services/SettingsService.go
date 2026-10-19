@@ -18,6 +18,10 @@ const (
 	SettingStockNoteHeader   = "stock_note_header"
 	SettingLowStockThreshold = "low_stock_threshold"
 	SettingExchangeRate      = "exchange_rate"
+
+	// 截图 / 打印时的中英文对照字典，值是一行一条的「英文=中文」文本。
+	SettingI18NCountry  = "i18n_country"
+	SettingI18NShipping = "i18n_shipping"
 )
 
 // DefaultExchangeRate 未维护月度汇率时使用的默认汇率。
@@ -98,6 +102,13 @@ func (s *SettingsService) PITerms(ctx context.Context) string {
 // StockNoteHeader 库存说明默认抬头。
 func (s *SettingsService) StockNoteHeader(ctx context.Context) string {
 	return s.Get(ctx, SettingStockNoteHeader)
+}
+
+// I18NDictionary 返回截图 / 打印使用的中英文对照字典原文。
+//
+// 空字符串表示还没维护，由前端内置字典兜底。
+func (s *SettingsService) I18NDictionary(ctx context.Context) (country, shipping string) {
+	return s.Get(ctx, SettingI18NCountry), s.Get(ctx, SettingI18NShipping)
 }
 
 // LowStockThreshold 低库存阈值。

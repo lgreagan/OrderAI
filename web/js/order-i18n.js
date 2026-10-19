@@ -2,9 +2,15 @@
  * 订单字段中英文对照。
  * 国家与运输方式在录入时是自由文本，历史数据多为英文；
  * 截图 / 打印时统一转成中文显示，已经是中文的原样返回。
+ *
+ * 字典分两层：
+ *   1. 内置（下面的 DEFAULT_*）——常用国家与运输方式，兜底用；
+ *   2. 维护（系统设置 → 翻译字典）——存在 app_settings，运行时从 /api/i18n 拉取，
+ *      同名键覆盖内置值，因此新增客户国别、新运输方式只要在设置页加一行，不用改代码。
+ * 页面渲染前 await OrderI18N.ready 即可保证已经应用维护过的字典。
  */
 (function () {
-    var COUNTRY = {
+    var DEFAULT_COUNTRY = {
         'UK': '英国', 'GB': '英国', 'UNITED KINGDOM': '英国', 'ENGLAND': '英国', 'BRITAIN': '英国',
         'GERMANY': '德国', 'DE': '德国', 'DEUTSCHLAND': '德国',
         'USA': '美国', 'US': '美国', 'UNITED STATES': '美国', 'UNITED STATES OF AMERICA': '美国', 'AMERICA': '美国',
@@ -66,7 +72,7 @@
         'MACAO': '中国澳门', 'MACAU': '中国澳门'
     };
 
-    var SHIPPING = {
+    var DEFAULT_SHIPPING = {
         'SEA': '海运', 'BY SEA': '海运', 'SEA FREIGHT': '海运', 'OCEAN': '海运', 'OCEAN FREIGHT': '海运',
         'LCL': '海运拼箱', 'FCL': '海运整柜',
         'AIR': '空运', 'BY AIR': '空运', 'AIR FREIGHT': '空运',
@@ -77,12 +83,52 @@
         'EMS': 'EMS', 'POST': '邮政'
     };
 
+    function clone(src) {
+        var dst = {};
+        for (var key in src) {
+            if (Object.prototype.hasOwnProperty.call(src, key)) dst[key] = src[key];
+        }
+        return dst;
+    }
+
+    var COUNTRY = clone(DEFAULT_COUNTRY);
+    var SHIPPING = clone(DEFAULT_SHIPPING);
+
+    function normalizeKey(value) {
+        return String(value === null || value === undefined ? '' : value)
+            .trim().toUpperCase().replace(/\s+/g, ' ');
+    }
+
+    // 一行一条：英文=中文。分隔符支持 =、＝、制表符；# 开头为注释。
+    function parseLines(text, target) {
+        String(text || '').split(/\r?\n/).forEach(function (line) {
+            var row = line.trim();
+            if (!row || row.charAt(0) === '#') return;
+
+            var idx = row.search(/[=＝\t]/);
+            if (idx <= 0) return;
+
+            var key = normalizeKey(row.slice(0, idx));
+            var value = row.slice(idx + 1).trim();
+            if (!key || !value) return;
+
+            target[key] = value;
+        });
+        return target;
+    }
+
+    function toText(dict) {
+        return Object.keys(dict).sort().map(function (key) {
+            return key + '=' + dict[key];
+        }).join('\n');
+    }
+
     function pick(dict, value) {
         var v = String(value === null || value === undefined ? '' : value).trim();
         if (!v) return '';
         if (/[\u4e00-\u9fa5]/.test(v)) return v;
 
-        var key = v.toUpperCase().replace(/\s+/g, ' ');
+        var key = normalizeKey(v);
         if (dict[key]) return dict[key];
 
         // 复合写法兜底（如 "FAST TRUCK (LTL)"）：长词优先，2 字母代码不参与，避免 US 命中 RUSSIA。
@@ -94,8 +140,26 @@
         return v;
     }
 
+    // 拉取系统设置里维护的字典，覆盖内置值；接口不可用时静默回落到内置。
+    var ready = Promise.resolve();
+    if (typeof fetch === 'function') {
+        ready = fetch('/api/i18n', { headers: { 'Accept': 'application/json' } })
+            .then(function (resp) { return resp.ok ? resp.json() : null; })
+            .then(function (res) {
+                var data = (res && res.data) || {};
+                parseLines(data.country, COUNTRY);
+                parseLines(data.shipping, SHIPPING);
+            })
+            .catch(function () { /* 离线或接口异常时用内置字典 */ });
+    }
+
     window.OrderI18N = {
-        country: function (v) { return pick(COUNTRY, v); },
-        shipping: function (v) { return pick(SHIPPING, v); }
+        ready: ready,
+        country: function (value) { return pick(COUNTRY, value); },
+        shipping: function (value) { return pick(SHIPPING, value); },
+        // 设置页用来预填 / 恢复内置字典。
+        defaults: function () {
+            return { country: toText(DEFAULT_COUNTRY), shipping: toText(DEFAULT_SHIPPING) };
+        }
     };
 })();

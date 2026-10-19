@@ -107,8 +107,45 @@
             </div>
         </div>
     </div>
+
+    <div class="card border-0 shadow-sm mt-3">
+        <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                    <h6 class="mb-1">翻译字典（截图 / 合并单用）</h6>
+                    <div class="text-secondary small">
+                        国家、运输方式在截图与合并单里显示成中文。一行一条「英文=中文」，
+                        这里填的会覆盖内置字典，没列出的继续用内置（约 100 个常用国家、20 种运输方式）。
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" id="loadDefaultDictBtn" type="button">载入内置字典</button>
+                    <button class="btn btn-sm btn-outline-danger" id="clearDictBtn" type="button">清空（回到内置）</button>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-lg-7">
+                    <label class="form-label">国家</label>
+                    <textarea class="form-control font-monospace setting-field" data-key="i18n_country" rows="12"
+                              spellcheck="false" placeholder="GERMANY=德国&#10;USA=美国&#10;UK=英国"></textarea>
+                </div>
+                <div class="col-lg-5">
+                    <label class="form-label">运输方式</label>
+                    <textarea class="form-control font-monospace setting-field" data-key="i18n_shipping" rows="12"
+                              spellcheck="false" placeholder="SEA=海运&#10;FAST TRUCK=快运卡车&#10;AIR=空运"></textarea>
+                </div>
+            </div>
+
+            <div class="form-text mt-2">
+                英文不区分大小写，空格会合并；<code>#</code> 开头的行是注释。
+                保存后刷新截图页即生效（页面加载时读取）。已经是中文的值原样显示，查不到的英文也原样显示。
+            </div>
+        </div>
+    </div>
 </div>
 
+<script src="/web/js/order-i18n.js"></script>
 <script>
     $(function () {
         const RATE_KEY = /^exchange_rate_(\d{4}-\d{2})$/;
@@ -221,6 +258,29 @@
             } finally {
                 $(this).prop('disabled', false).text('保存设置');
             }
+        });
+
+        // 翻译字典：内置字典来自 order-i18n.js，载入后可在文本框里接着改。
+        $('#loadDefaultDictBtn').on('click', function () {
+            const defaults = window.OrderI18N && OrderI18N.defaults ? OrderI18N.defaults() : null;
+            if (!defaults) {
+                showMessage('字典脚本未加载，刷新页面后重试', 'danger');
+                return;
+            }
+
+            const filled = String($('[data-key="i18n_country"]').val() || '').trim()
+                + String($('[data-key="i18n_shipping"]').val() || '').trim();
+            if (filled && !confirm('会覆盖当前填写的字典，继续？')) return;
+
+            $('[data-key="i18n_country"]').val(defaults.country);
+            $('[data-key="i18n_shipping"]').val(defaults.shipping);
+            showMessage('已载入内置字典，记得点右上角「保存设置」', 'info');
+        });
+
+        $('#clearDictBtn').on('click', function () {
+            if (!confirm('清空后国家 / 运输方式回到内置字典，确定？')) return;
+            $('[data-key="i18n_country"],[data-key="i18n_shipping"]').val('');
+            showMessage('已清空，点「保存设置」后生效', 'warning');
         });
 
         $('#saveRateBtn').on('click', async function () {

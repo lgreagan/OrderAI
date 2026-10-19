@@ -488,6 +488,7 @@ func Register(
 	e.GET("/api/settings", settingsController.List)
 	e.PUT("/api/settings", settingsController.Save)
 	e.DELETE("/api/settings/:key", settingsController.Delete)
+	e.GET("/api/i18n", settingsController.I18N)
 	e.GET("/api/system-info", settingsController.SystemInfo)
 
 	// ========================================
