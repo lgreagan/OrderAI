@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>系统激活 - OrderAI</title>
+<style>
+    :root {
+        --ink: #080b16;
+        --brand: #4f6bff;
+        --brand-2: #8b5cf6;
+        --cyan: #22d3ee;
+        --ok: #10b981;
+        --warn: #f59e0b;
+        --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; }
+
+    body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        padding: 26px;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+        color: #e5e7eb;
+        background: #070a14;
+    }
+
+    .bg {
+        position: fixed;
+        inset: 0;
+        background:
+            radial-gradient(1000px 700px at 10% 4%, #1b2a6e 0%, transparent 58%),
+            radial-gradient(820px 640px at 92% 96%, #3b1f63 0%, transparent 62%),
+            linear-gradient(158deg, #070a14 0%, #0b1022 52%, #101327 100%);
+    }
+
+    .orb {
+        position: fixed;
+        border-radius: 50%;
+        filter: blur(90px);
+        opacity: .45;
+        animation: float 20s ease-in-out infinite;
+        pointer-events: none;
+    }
+    .orb.a { width: 400px; height: 400px; background: #3f5bff; top: -140px; left: -100px; }
+    .orb.b { width: 340px; height: 340px; background: #12c7e8; bottom: -160px; left: 38%; animation-delay: -7s; opacity: .3; }
+    .orb.c { width: 440px; height: 440px; background: #a855f7; top: -160px; right: -150px; animation-delay: -12s; }
+
+    @keyframes float {
+        0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+        50% { transform: translate3d(20px, -24px, 0) scale(1.06); }
+    }
+
+    .grid {
+        position: fixed;
+        inset: 0;
+        background-image:
+            linear-gradient(rgba(255, 255, 255, .04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, .04) 1px, transparent 1px);
+        background-size: 58px 58px;
+        -webkit-mask-image: radial-gradient(circle at 50% 42%, #000 0%, transparent 74%);
+        mask-image: radial-gradient(circle at 50% 42%, #000 0%, transparent 74%);
+        pointer-events: none;
+    }
+
+    .card {
+        position: relative;
+        width: min(620px, 100%);
+        padding: 38px 38px 30px;
+        border-radius: 26px;
+        background: rgba(11, 15, 30, .72);
+        border: 1px solid rgba(255, 255, 255, .09);
+        box-shadow: 0 50px 120px -40px rgba(0, 0, 0, .95),
+                    inset 0 1px 0 rgba(255, 255, 255, .07);
+        -webkit-backdrop-filter: blur(22px);
+        backdrop-filter: blur(22px);
+        animation: rise .7s cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    @keyframes rise {
+        from { opacity: 0; transform: translateY(24px) scale(.985); }
+        to { opacity: 1; transform: none; }
+    }
+
+    /* ---------- 头部 ---------- */
+
+    .head { display: flex; align-items: center; gap: 14px; }
+
+    .mark {
+        display: grid;
+        place-items: center;
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        font-weight: 800;
+        font-size: 20px;
+        color: #fff;
+        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        box-shadow: 0 12px 30px -10px rgba(79, 107, 255, .9);
+    }
+
+    .head h1 { font-size: 19px; font-weight: 700; letter-spacing: .2px; }
+    .head p { margin-top: 3px; font-size: 12.5px; color: #8b93a7; }
+
+    .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+        padding: 5px 11px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .status.pending { color: #fbbf24; background: rgba(245, 158, 11, .12); border-color: rgba(245, 158, 11, .32); }
+    .status.active  { color: #34d399; background: rgba(16, 185, 129, .12); border-color: rgba(16, 185, 129, .32); }
+    .status.invalid { color: #f87171; background: rgba(239, 68, 68, .12); border-color: rgba(239, 68, 68, .3); }
+
+    /* ---------- 机器码 ---------- */
+
+    .machine-box {
+        margin-top: 26px;
+        padding: 18px 18px 16px;
+        border-radius: 16px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .02));
+        border: 1px solid rgba(255, 255, 255, .08);
+    }
+
+    .label {
+        font-size: 11.5px;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: #7f8798;
+    }
+
+    .machine-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+
+    .machine {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 25px;
+        font-weight: 700;
+        letter-spacing: .06em;
+        color: #fff;
+        word-break: break-all;
+    }
+
+    .copy {
+        margin-left: auto;
+        flex: none;
+        padding: 7px 13px;
+        font-size: 12px;
+        color: #c7cbe0;
+        background: rgba(255, 255, 255, .07);
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: 9px;
+        cursor: pointer;
+        transition: .18s;
+    }
+    .copy:hover { background: rgba(255, 255, 255, .13); color: #fff; }
+
+    .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 22px;
+        margin-top: 12px;
+        font-size: 12px;
+        color: #7f8798;
+    }
+    .meta b { color: #b9bfd2; font-weight: 500; }
+
+    /* ---------- 表单 ---------- */
+
+    .form { margin-top: 22px; }
+
+    .field {
+        display: flex;
+        gap: 10px;
+    }
+
+    input[type="text"] {
+        flex: 1;
+        min-width: 0;
+        padding: 13px 15px;
+        font-size: 15px;
+        letter-spacing: .08em;
+        color: #fff;
+        background: rgba(255, 255, 255, .05);
+        border: 1px solid rgba(255, 255, 255, .13);
+        border-radius: 12px;
+        outline: none;
+        transition: .18s;
+        font-family: "SFMono-Regular", Consolas, monospace;
+    }
+    input[type="text"]::placeholder { color: #5d6478; letter-spacing: .04em; }
+    input[type="text"]:focus {
+        border-color: rgba(79, 107, 255, .75);
+        background: rgba(79, 107, 255, .08);
+        box-shadow: 0 0 0 4px rgba(79, 107, 255, .14);
+    }
+
+    .btn {
+        flex: none;
+        padding: 13px 24px;
+        font-size: 14.5px;
+        font-weight: 600;
+        color: #fff;
+        border: 0;
+        border-radius: 12px;
+        cursor: pointer;
+        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        box-shadow: 0 14px 34px -14px rgba(79, 107, 255, .95);
+        transition: .18s;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 18px 38px -14px rgba(79, 107, 255, 1); }
+    .btn:disabled { opacity: .6; cursor: default; transform: none; }
+
+    .btn-ghost {
+        background: rgba(255, 255, 255, .08);
+        border: 1px solid rgba(255, 255, 255, .14);
+        box-shadow: none;
+        color: #d6dae8;
+    }
+    .btn-ghost:hover { background: rgba(255, 255, 255, .14); box-shadow: none; }
+
+    .hint { margin-top: 10px; font-size: 12px; color: #6f778a; line-height: 1.7; }
+    .hint code {
+        padding: 1px 6px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, .07);
+        color: #a9b0c6;
+        font-family: Consolas, monospace;
+    }
+
+    .msg {
+        display: none;
+        margin-top: 14px;
+        padding: 11px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        line-height: 1.6;
+    }
+    .msg.show { display: block; }
+    .msg.ok { color: #6ee7b7; background: rgba(16, 185, 129, .1); border: 1px solid rgba(16, 185, 129, .3); }
+    .msg.err { color: #fca5a5; background: rgba(239, 68, 68, .1); border: 1px solid rgba(239, 68, 68, .28); }
+
+    /* ---------- 已激活信息 ---------- */
+
+    .info {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-top: 22px;
+    }
+    .info div {
+        padding: 13px 14px;
+        border-radius: 13px;
+        background: rgba(255, 255, 255, .04);
+        border: 1px solid rgba(255, 255, 255, .07);
+    }
+    .info span { display: block; font-size: 11.5px; color: #7f8798; }
+    .info strong { display: block; margin-top: 5px; font-size: 13.5px; color: #e8eaf3; font-weight: 600; }
+
+    .actions { display: flex; gap: 10px; margin-top: 22px; }
+    .actions .btn { flex: 1; text-align: center; text-decoration: none; }
+
+    /* ---------- 离线码 ---------- */
+
+    details {
+        margin-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, .08);
+        padding-top: 14px;
+    }
+    summary {
+        font-size: 12.5px;
+        color: #8b93a7;
+        cursor: pointer;
+        list-style: none;
+        user-select: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: "▸ "; }
+    details[open] summary::before { content: "▾ "; }
+    details[open] summary { color: #c7cbe0; }
+
+    .offline { margin-top: 13px; }
+    .offline .field input { font-size: 14px; }
+
+    .foot {
+        margin-top: 22px;
+        text-align: center;
+        font-size: 11.5px;
+        color: #4f5769;
+    }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="orb a"></div>
+<div class="orb b"></div>
+<div class="orb c"></div>
+<div class="grid"></div>
+
+<div class="card">
+    <div class="head">
+        <div class="mark">O</div>
+        <div>
+            <h1>系统激活</h1>
+            <p>OrderAI · 外贸订单管理系统</p>
+        </div>
+        {{if .activated}}
+        <div class="status active"><i></i>已激活</div>
+        {{else if eq .status_text "未激活"}}
+        <div class="status pending"><i></i>{{.status_text}}</div>
+        {{else}}
+        <div class="status invalid"><i></i>{{.status_text}}</div>
+        {{end}}
+    </div>
+
+    <div class="machine-box">
+        <div class="label">本机机器码</div>
+        <div class="machine-row">
+            <div class="machine" id="machine">{{.machine}}</div>
+            <button class="copy" id="copyMachine" type="button">复制</button>
+        </div>
+        <div class="meta">
+            <span>CPU <b>{{.cpu}}</b></span>
+            <span>网卡 <b>{{.mac}}</b></span>
+        </div>
+    </div>
+
+    {{if .machine_error}}
+    <div class="msg err show">读取机器码失败：{{.machine_error}}</div>
+    {{end}}
+
+    <div class="msg" id="msg"></div>
+
+    {{if .activated}}
+    <div class="info">
+        <div><span>使用单位</span><strong>{{.customer}}</strong></div>
+        <div><span>到期时间</span><strong>{{.expires}}</strong></div>
+        <div><span>剩余天数</span><strong>{{if lt .days_left 0}}不限{{else}}{{.days_left}} 天{{end}}</strong></div>
+    </div>
+    <div class="actions">
+        <a class="btn" href="/">进入系统</a>
+        <a class="btn btn-ghost" href="/activate" id="renewBtn">换授权</a>
+    </div>
+    {{else}}
+    <div class="form">
+        <div class="label" style="margin-bottom:8px">激活码（PIN）</div>
+        <div class="field">
+            <input type="text" id="pin" placeholder="LICS-XXXX-XXXX" autocomplete="off" spellcheck="false">
+            <button class="btn" id="activateBtn" type="button">在线激活</button>
+        </div>
+        <div class="hint">
+            {{if .server}}
+            激活码由供应商提供；点击「在线激活」会自动连到 <code>{{.server}}</code> 换取授权。
+            {{else}}
+            未配置授权中心地址，请先在 <code>.env</code> 里填 <code>LICENSE_SERVER</code> 后重启；或使用下方离线激活码。
+            {{end}}
+        </div>
+    </div>
+
+    <details>
+        <summary>连不上授权中心？用离线激活码</summary>
+        <div class="offline">
+            <div class="field">
+                <input type="text" id="offlineCode" placeholder="ORDAI1-20271019-9K3M7Q" autocomplete="off" spellcheck="false">
+                <button class="btn btn-ghost" id="offlineBtn" type="button">离线激活</button>
+            </div>
+            <div class="hint">离线激活码由供应商按上面的机器码生成，绑定机器、含到期日。</div>
+        </div>
+    </details>
+    {{end}}
+
+    <div class="foot">机器码绑定了本机 CPU 与网卡，换机器需重新激活</div>
+</div>
+
+<script>
+(function () {
+    var msg = document.getElementById('msg');
+
+    function show(text, ok) {
+        msg.className = 'msg show ' + (ok ? 'ok' : 'err');
+        msg.textContent = text;
+    }
+
+    function post(url, body, btn, loadingText) {
+        if (btn) { btn.disabled = true; }
+        var old = btn ? btn.textContent : '';
+        if (btn) { btn.textContent = loadingText; }
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(function (r) {
+            return r.json().catch(function () { return { success: false, message: '服务器返回异常' }; });
+        }).then(function (res) {
+            return res;
+        }).finally(function () {
+            if (btn) { btn.disabled = false; btn.textContent = old; }
+        });
+    }
+
+    var copyBtn = document.getElementById('copyMachine');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function () {
+            var text = document.getElementById('machine').textContent.trim();
+            var done = function () {
+                copyBtn.textContent = '已复制';
+                setTimeout(function () { copyBtn.textContent = '复制'; }, 1600);
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(done);
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                done();
+            }
+        });
+    }
+
+    var pinInput = document.getElementById('pin');
+    var activateBtn = document.getElementById('activateBtn');
+    if (activateBtn) {
+        activateBtn.addEventListener('click', function () {
+            var pin = (pinInput.value || '').trim();
+            if (!pin) { show('请先输入激活码', false); pinInput.focus(); return; }
+            post('/api/license/activate', { pin: pin }, activateBtn, '激活中…').then(function (res) {
+                if (res.success) {
+                    show(res.message || '激活成功，正在进入系统…', true);
+                    setTimeout(function () { location.href = '/'; }, 900);
+                } else {
+                    show(res.message || '激活失败', false);
+                }
+            }).catch(function (e) {
+                show('请求失败：' + e, false);
+            });
+        });
+        pinInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { activateBtn.click(); }
+        });
+        pinInput.focus();
+    }
+
+    var offlineBtn = document.getElementById('offlineBtn');
+    var offlineInput = document.getElementById('offlineCode');
+    if (offlineBtn) {
+        offlineBtn.addEventListener('click', function () {
+            var code = (offlineInput.value || '').trim();
+            if (!code) { show('请先输入离线激活码', false); offlineInput.focus(); return; }
+            post('/api/license/offline', { code: code }, offlineBtn, '校验中…').then(function (res) {
+                if (res.success) {
+                    show(res.message || '激活成功，正在进入系统…', true);
+                    setTimeout(function () { location.href = '/'; }, 900);
+                } else {
+                    show(res.message || '激活失败', false);
+                }
+            });
+        });
+        offlineInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { offlineBtn.click(); }
+        });
+    }
+})();
+</script>
+</body>
+</html>

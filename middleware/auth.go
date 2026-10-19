@@ -15,11 +15,14 @@ import (
 const ContextUserKey = "user"
 
 // authSkipPrefixes 静态资源与登录页本身不需要登录态。
+// 激活页/激活接口也要放行：系统还没激活时，客户连账号都没有。
 var authSkipPrefixes = []string{
 	"/web/",
 	"/uploads/",
 	"/login",
 	"/api/auth/login",
+	"/activate",
+	"/api/license/",
 	"/favicon.ico",
 	"/robots.txt",
 }

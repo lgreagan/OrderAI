@@ -16,3 +16,5 @@ OrderAI
 # 系统杂项
 Thumbs.db
 .DS_Store
+data/
+tools/licserver/data/

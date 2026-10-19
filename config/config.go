@@ -18,6 +18,10 @@ type Config struct {
 	DBName     string
 
 	AppPort string
+
+	// 授权：本地授权文件路径 + 授权中心地址（在线激活用）
+	LicenseFile   string
+	LicenseServer string
 }
 
 func Load() *Config {
@@ -37,6 +41,9 @@ func Load() *Config {
 		DBPassword: getEnv("MYSQL_PASSWORD", ""),
 		DBName:     getEnv("MYSQL_DATABASE", "order_ai"),
 		AppPort:    getEnv("APP_PORT", "8080"),
+
+		LicenseFile:   getEnv("LICENSE_FILE", "data/license.dat"),
+		LicenseServer: getEnv("LICENSE_SERVER", ""),
 	}
 }
 

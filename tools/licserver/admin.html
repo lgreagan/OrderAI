@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OrderAI 授权中心</title>
+<style>
+    :root {
+        --bg: #f5f6fa;
+        --card: #fff;
+        --ink: #101828;
+        --muted: #667085;
+        --line: #e4e7ec;
+        --brand: #4f6bff;
+        --brand-2: #8b5cf6;
+        --ok: #12b76a;
+        --warn: #f79009;
+        --danger: #f04438;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        padding: 28px 20px 60px;
+        font-size: 14px;
+        -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1080px; margin: 0 auto; }
+
+    header { display: flex; align-items: center; gap: 13px; margin-bottom: 22px; }
+    .mark {
+        width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+        color: #fff; font-weight: 800; font-size: 19px;
+        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        box-shadow: 0 10px 24px -10px rgba(79, 107, 255, .85);
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .spacer { flex: 1; }
+
+    .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 22px;
+        margin-bottom: 18px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+    }
+    .card h2 { font-size: 14.5px; font-weight: 650; margin-bottom: 16px; }
+
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .f { display: flex; flex-direction: column; gap: 6px; }
+    .f.grow { flex: 1; min-width: 180px; }
+    .f label { font-size: 12px; color: var(--muted); }
+    input, select {
+        padding: 9px 12px; font-size: 13.5px; color: var(--ink);
+        border: 1px solid var(--line); border-radius: 9px; outline: none;
+        background: #fff; transition: .15s;
+        font-family: inherit;
+    }
+    input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(79, 107, 255, .13); }
+    input[readonly] { background: #f9fafb; }
+    .mono { font-family: "SFMono-Regular", Consolas, monospace; letter-spacing: .04em; }
+
+    button {
+        padding: 9px 18px; font-size: 13.5px; font-weight: 600; color: #fff;
+        border: 0; border-radius: 9px; cursor: pointer;
+        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        transition: .15s; font-family: inherit;
+    }
+    button:hover { filter: brightness(1.06); }
+    button:disabled { opacity: .6; cursor: default; }
+    button.ghost {
+        background: #fff; color: #344054; border: 1px solid var(--line);
+    }
+    button.ghost:hover { background: #f9fafb; }
+    button.tiny { padding: 5px 10px; font-size: 12px; border-radius: 7px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 11px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+    tbody tr:hover { background: #fafbff; }
+    td.mono { font-size: 12.5px; }
+
+    .tag {
+        display: inline-block; padding: 3px 9px; border-radius: 999px;
+        font-size: 11.5px; font-weight: 600;
+    }
+    .tag.ok { color: #05603a; background: #d1fadf; }
+    .tag.free { color: #175cd3; background: #d1e9ff; }
+    .tag.off { color: #b42318; background: #fee4e2; }
+
+    .stats { display: flex; gap: 22px; margin-bottom: 16px; }
+    .stat span { font-size: 11.5px; color: var(--muted); }
+    .stat strong { display: block; font-size: 21px; margin-top: 3px; }
+
+    .msg {
+        display: none; margin-bottom: 14px; padding: 10px 13px; border-radius: 9px; font-size: 13px;
+    }
+    .msg.show { display: block; }
+    .msg.ok { color: #05603a; background: #ecfdf3; border: 1px solid #abefc6; }
+    .msg.err { color: #b42318; background: #fef3f2; border: 1px solid #fecdca; }
+
+    .empty { padding: 26px 0; text-align: center; color: var(--muted); font-size: 13px; }
+    .hint { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.7; }
+    .hint code { padding: 1px 6px; border-radius: 5px; background: #f2f4f7; font-family: Consolas, monospace; }
+
+    .mask {
+        position: fixed; inset: 0; display: none; place-items: center;
+        background: rgba(16, 24, 40, .45); padding: 20px; z-index: 50;
+    }
+    .mask.show { display: grid; }
+    .mask .card { width: min(380px, 100%); margin: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <div class="mark">L</div>
+        <div>
+            <h1>OrderAI 授权中心</h1>
+            <p>生成激活码 · 查看已激活机器 · 出离线码</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="ghost tiny" id="tokenBtn">更换管理口令</button>
+    </header>
+
+    <div class="msg" id="msg"></div>
+
+    <div class="card">
+        <h2>生成激活码</h2>
+        <div class="row">
+            <div class="f grow">
+                <label>使用单位</label>
+                <input id="customer" placeholder="例如：某某贸易有限公司">
+            </div>
+            <div class="f">
+                <label>有效天数（0 = 永久）</label>
+                <input id="days" class="mono" type="number" value="365" min="0" max="3650" style="width:150px">
+            </div>
+            <div class="f">
+                <label>数量</label>
+                <input id="count" class="mono" type="number" value="1" min="1" max="50" style="width:90px">
+            </div>
+            <button id="createBtn">生成</button>
+        </div>
+        <div class="hint">
+            客户在系统激活页填这串 PIN，点「在线激活」即可。<b>一个 PIN 绑一台机器</b>；同一台机器重装系统可再用同一个 PIN 续签。
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="stats">
+            <div class="stat"><span>激活码总数</span><strong id="statTotal">0</strong></div>
+            <div class="stat"><span>已使用</span><strong id="statUsed">0</strong></div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:170px">激活码</th>
+                    <th>使用单位</th>
+                    <th style="width:110px">有效期</th>
+                    <th style="width:200px">机器码</th>
+                    <th style="width:120px">状态</th>
+                    <th style="width:130px"></th>
+                </tr>
+            </thead>
+            <tbody id="pinBody"></tbody>
+        </table>
+        <div class="empty" id="empty" style="display:none">还没有激活码，先在上面生成一批</div>
+    </div>
+
+    <div class="card">
+        <h2>离线激活码（客户连不上服务器时用）</h2>
+        <div class="row">
+            <div class="f grow">
+                <label>客户机器码</label>
+                <input id="offMachine" class="mono" placeholder="例如 3F2A-91C4-7B08-DE55">
+            </div>
+            <div class="f">
+                <label>有效天数</label>
+                <input id="offDays" class="mono" type="number" value="365" min="1" max="3650" style="width:130px">
+            </div>
+            <button class="ghost" id="offBtn">出码</button>
+        </div>
+        <div class="row" id="offResult" style="margin-top:12px; display:none">
+            <div class="f grow">
+                <label>离线激活码（发给客户填）</label>
+                <input id="offCode" class="mono" readonly>
+            </div>
+            <button class="ghost" id="offCopy">复制</button>
+        </div>
+    </div>
+</div>
+
+<div class="mask" id="mask">
+    <div class="card">
+        <h2>管理口令</h2>
+        <div class="f">
+            <label>启动授权中心时控制台打印的口令</label>
+            <input id="tokenInput" class="mono" placeholder="LICS_TOKEN">
+        </div>
+        <div class="row" style="margin-top:14px; justify-content:flex-end">
+            <button id="tokenSave">保存</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var TOKEN_KEY = 'lics_token';
+    var token = localStorage.getItem(TOKEN_KEY) || '';
+    var pins = [];
+
+    var msg = document.getElementById('msg');
+
+    function show(text, ok) {
+        msg.className = 'msg show ' + (ok ? 'ok' : 'err');
+        msg.textContent = text;
+        if (ok) { setTimeout(function () { msg.className = 'msg'; }, 3500); }
+    }
+
+    function api(path, opts) {
+        opts = opts || {};
+        opts.headers = Object.assign({
+            'Content-Type': 'application/json',
+            'X-Lics-Token': token
+        }, opts.headers || {});
+        return fetch(path, opts).then(function (r) {
+            if (r.status === 401) {
+                openMask();
+                throw new Error('请先填管理口令');
+            }
+            return r.json().catch(function () { return { success: false, message: '服务器返回异常' }; });
+        });
+    }
+
+    function openMask() {
+        document.getElementById('mask').classList.add('show');
+        document.getElementById('tokenInput').value = token;
+        document.getElementById('tokenInput').focus();
+    }
+
+    document.getElementById('tokenBtn').addEventListener('click', openMask);
+    document.getElementById('tokenSave').addEventListener('click', function () {
+        token = document.getElementById('tokenInput').value.trim();
+        localStorage.setItem(TOKEN_KEY, token);
+        document.getElementById('mask').classList.remove('show');
+        load();
+    });
+
+    function fmtDate(unix) {
+        if (!unix) { return '永久'; }
+        var d = new Date(unix * 1000);
+        var p = function (n) { return (n < 10 ? '0' : '') + n; };
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    }
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    function copy(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text);
+        } else {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+    }
+
+    function render(data) {
+        pins = data.pins || [];
+        document.getElementById('statTotal').textContent = data.total || 0;
+        document.getElementById('statUsed').textContent = data.used || 0;
+
+        var body = document.getElementById('pinBody');
+        document.getElementById('empty').style.display = pins.length ? 'none' : 'block';
+        body.innerHTML = pins.map(function (p) {
+            var tag = p.revoked
+                ? '<span class="tag off">已作废</span>'
+                : (p.used_at ? '<span class="tag ok">已激活</span>' : '<span class="tag free">未使用</span>');
+            var exp = p.used_at ? fmtDate(p.expires_at) : (p.days ? p.days + ' 天' : '永久');
+            return '<tr>' +
+                '<td class="mono"><b>' + esc(p.pin) + '</b></td>' +
+                '<td>' + esc(p.customer) + '</td>' +
+                '<td>' + esc(exp) + '</td>' +
+                '<td class="mono">' + (p.machine ? esc(p.machine) : '—') + '</td>' +
+                '<td>' + tag + '</td>' +
+                '<td style="text-align:right">' +
+                '<button class="ghost tiny" data-copy="' + esc(p.pin) + '">复制</button> ' +
+                (p.revoked ? '' : '<button class="ghost tiny" data-revoke="' + esc(p.pin) + '">作废</button>') +
+                '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    document.getElementById('pinBody').addEventListener('click', function (e) {
+        var t = e.target;
+        if (t.dataset.copy) { copy(t.dataset.copy); show('已复制 ' + t.dataset.copy, true); }
+        if (t.dataset.revoke) {
+            if (!confirm('作废后该激活码不能再用于新机器，确定？')) { return; }
+            api('/api/pins/' + encodeURIComponent(t.dataset.revoke) + '/revoke', { method: 'POST' })
+                .then(function (res) {
+                    show(res.message || '已处理', res.success);
+                    load();
+                });
+        }
+    });
+
+    document.getElementById('createBtn').addEventListener('click', function () {
+        var btn = this;
+        var payload = {
+            customer: document.getElementById('customer').value.trim(),
+            days: parseInt(document.getElementById('days').value, 10) || 0,
+            count: parseInt(document.getElementById('count').value, 10) || 1
+        };
+        if (!payload.customer) { show('请填使用单位', false); return; }
+        btn.disabled = true;
+        api('/api/pins', { method: 'POST', body: JSON.stringify(payload) })
+            .then(function (res) {
+                show(res.message || (res.success ? '已生成' : '生成失败'), res.success);
+                if (res.success) { load(); }
+            })
+            .finally(function () { btn.disabled = false; });
+    });
+
+    document.getElementById('offBtn').addEventListener('click', function () {
+        var machine = document.getElementById('offMachine').value.trim();
+        if (!machine) { show('请填客户机器码', false); return; }
+        api('/api/offline', {
+            method: 'POST',
+            body: JSON.stringify({
+                machine: machine,
+                days: parseInt(document.getElementById('offDays').value, 10) || 365
+            })
+        }).then(function (res) {
+            if (!res.success) { show(res.message || '出码失败', false); return; }
+            document.getElementById('offResult').style.display = 'flex';
+            document.getElementById('offCode').value = res.data.code;
+            show('离线码有效期至 ' + res.data.expires, true);
+        });
+    });
+
+    document.getElementById('offCopy').addEventListener('click', function () {
+        copy(document.getElementById('offCode').value);
+        show('已复制', true);
+    });
+
+    function load() {
+        if (!token) { openMask(); return; }
+        api('/api/pins').then(function (res) {
+            if (res && res.success) { render(res.data); }
+        }).catch(function () {});
+    }
+
+    load();
+})();
+</script>
+</body>
+</html>

@@ -1,302 +1,183 @@
-// Package license 提供简易机器绑定授权。
-//
-// 思路：把服务器「CPU ID + 主网卡 MAC」拼成机器指纹，用内置密钥做 HMAC-SHA256，
-// 取摘要前 80bit 编成 ORDAI1-XXXX-XXXX-XXXX-XXXX 形式的授权码。
-// 授权码写死在 main.go，启动时用本机指纹现算一遍做比对，不匹配就拒绝启动。
-//
-// 注意：这是「防呆级」授权，只防把程序连同数据库拷到另一台机器直接跑，
-// 不防逆向（源码都在手上，改掉 main.go 里的校验就绕过了）。
 package license
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
-	"os/exec"
-	"runtime"
-	"sort"
+	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
-// 授权码格式：ORDAI1-A1B2-C3D4-E5F6-G7H8
-const (
-	codePrefix = "ORDAI1"
-	// Crockford Base32：去掉 I / L / O / U，避免和 1 / 0 看混。
-	alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-)
+// Secret 签名密钥。客户端与授权中心（tools/licserver）必须一致。
+// 换掉它 = 已发出的授权文件全部失效。
+const Secret = "OrderAI!2026@根#license$7f3a9c"
 
-// MismatchError 授权码与本机指纹不匹配。
-type MismatchError struct {
-	CPU string
-	MAC string
-}
-
-func (e *MismatchError) Error() string {
-	return fmt.Sprintf("授权码与本机不匹配（CPU=%s MAC=%s）", e.CPU, e.MAC)
-}
-
-// ========================================
-// 机器指纹
-// ========================================
-
+// 授权状态错误。页面据此显示不同提示。
 var (
-	cpuOnce sync.Once
-	cpuVal  string
-	cpuErr  error
-
-	macOnce sync.Once
-	macVal  string
-	macErr  error
+	ErrNotFound        = errors.New("本机尚未激活")
+	ErrExpired         = errors.New("授权已过期")
+	ErrMachineMismatch = errors.New("授权不属于本机")
+	ErrTampered        = errors.New("授权文件已损坏或被改动")
 )
 
-// Fingerprint 返回本机指纹：CPU ID 与主网卡 MAC。
-func Fingerprint() (cpu, mac string, err error) {
-	cpu, err = CPUID()
-	if err != nil {
-		return "", "", err
-	}
-	mac, err = PrimaryMAC()
-	if err != nil {
-		return "", "", err
-	}
-	return cpu, mac, nil
+// License 授权文件内容。Token 为签名，机器码/客户/时间任一被改都会验签失败。
+type License struct {
+	Machine   string `json:"machine"`    // 机器码
+	Customer  string `json:"customer"`   // 客户/使用单位
+	IssuedAt  int64  `json:"issued_at"`  // 签发时间（unix 秒）
+	ExpiresAt int64  `json:"expires_at"` // 到期时间（unix 秒），0 = 永久
+	Token     string `json:"token"`      // HMAC 签名
 }
 
-// MachineLine 单行指纹，便于日志与人工核对。
-func MachineLine() string {
-	cpu, mac, err := Fingerprint()
-	if err != nil {
-		return "读取机器指纹失败: " + err.Error()
-	}
-	return fmt.Sprintf("CPU=%s MAC=%s", cpu, mac)
+// Sign 按当前内容重算签名。
+func (l *License) Sign() {
+	l.Token = signOf(l)
 }
 
-// CPUID 读取 CPU 序列号（同一台机器重启后不变）。
-func CPUID() (string, error) {
-	cpuOnce.Do(func() { cpuVal, cpuErr = detectCPUID() })
-	return cpuVal, cpuErr
+// Expired 是否已过期（永久授权恒为 false）。
+func (l *License) Expired() bool {
+	return l.ExpiresAt > 0 && time.Now().Unix() > l.ExpiresAt
 }
 
-func detectCPUID() (string, error) {
-	switch runtime.GOOS {
-	case "windows":
-		// wmic 快，Win11 部分版本已移除，所以留 PowerShell CIM 兜底。
-		if out, ok := runCmd(4*time.Second, "wmic", "cpu", "get", "ProcessorId", "/value"); ok {
-			if v := parseKeyValue(out, "ProcessorId"); v != "" {
-				return v, nil
-			}
-		}
-		if out, ok := runCmd(6*time.Second, "powershell", "-NoProfile", "-NonInteractive",
-			"-Command", "(Get-CimInstance Win32_Processor | Select-Object -First 1).ProcessorId"); ok {
-			if v := firstNonEmptyLine(out); v != "" {
-				return v, nil
-			}
-		}
-		// 最后退路：注册表里的 CPU 标识。同型号机器会相同，属降级方案。
-		if out, ok := runCmd(4*time.Second, "reg", "query",
-			`HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0`, "/v", "Identifier"); ok {
-			if v := parseKeyValue(out, "Identifier"); v != "" {
-				return strings.ReplaceAll(v, " ", ""), nil
-			}
-		}
-		return "", errors.New("读取 CPU ID 失败（wmic / PowerShell / 注册表均不可用）")
-
-	case "linux":
-		if b, err := os.ReadFile("/proc/cpuinfo"); err == nil {
-			fields := map[string]string{}
-			for _, line := range strings.Split(string(b), "\n") {
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) == 2 {
-					fields[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-				}
-			}
-			for _, k := range []string{"Serial", "processor"} {
-				if v := fields[k]; v != "" && k == "Serial" {
-					return v, nil
-				}
-			}
-		}
-		if b, err := os.ReadFile("/etc/machine-id"); err == nil {
-			if v := firstNonEmptyLine(string(b)); v != "" {
-				return v, nil
-			}
-		}
-		return "", errors.New("读取 CPU ID 失败（/proc/cpuinfo 与 /etc/machine-id 均不可用）")
-
-	case "darwin":
-		if out, ok := runCmd(4*time.Second, "sh", "-c",
-			`ioreg -rd1 -c IOPlatformExpertDevice | awk -F\" '/IOPlatformUUID/{print $4}'`); ok {
-			if v := firstNonEmptyLine(out); v != "" {
-				return v, nil
-			}
-		}
-		return "", errors.New("读取 CPU ID 失败")
-
-	default:
-		return "", fmt.Errorf("不支持的平台: %s", runtime.GOOS)
+// ExpiresText 到期日文案。
+func (l *License) ExpiresText() string {
+	if l.ExpiresAt <= 0 {
+		return "永久"
 	}
+	return time.Unix(l.ExpiresAt, 0).Format("2006-01-02")
 }
 
-// PrimaryMAC 取主网卡 MAC：优先「物理网卡 + 有 IPv4 地址」，同时排除虚拟网卡。
-func PrimaryMAC() (string, error) {
-	macOnce.Do(func() { macVal, macErr = detectPrimaryMAC() })
-	return macVal, macErr
+// DaysLeft 剩余天数（永久返回 -1）。
+func (l *License) DaysLeft() int {
+	if l.ExpiresAt <= 0 {
+		return -1
+	}
+	d := int((l.ExpiresAt - time.Now().Unix()) / 86400)
+	if d < 0 {
+		d = 0
+	}
+	return d
 }
 
-type macCandidate struct {
-	mac   string
-	score int
-	index int
-}
-
-func detectPrimaryMAC() (string, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return "", err
+// VerifyLocal 校验：机器码匹配 + 签名正确 + 未过期。
+func (l *License) VerifyLocal(machine string) error {
+	if l == nil {
+		return ErrNotFound
 	}
-
-	cands := make([]macCandidate, 0, len(ifaces))
-	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		if len(ifc.HardwareAddr) != 6 {
-			continue
-		}
-		mac := strings.ToUpper(ifc.HardwareAddr.String())
-		if mac == "00:00:00:00:00:00" {
-			continue
-		}
-
-		score := 10
-		if isVirtualNIC(ifc.Name) {
-			score -= 100
-		}
-		if ifc.Flags&net.FlagUp != 0 {
-			score += 3
-		}
-		if hasIPv4(ifc) {
-			score += 6
-		}
-		cands = append(cands, macCandidate{mac: mac, score: score, index: ifc.Index})
+	if !strings.EqualFold(strings.TrimSpace(l.Machine), strings.TrimSpace(machine)) {
+		return ErrMachineMismatch
 	}
-
-	if len(cands) == 0 {
-		return "", errors.New("找不到可用的网卡 MAC")
+	if !hmac.Equal([]byte(strings.ToLower(l.Token)), []byte(strings.ToLower(signOf(l)))) {
+		return ErrTampered
 	}
-	sort.Slice(cands, func(i, j int) bool {
-		if cands[i].score != cands[j].score {
-			return cands[i].score > cands[j].score
-		}
-		return cands[i].index < cands[j].index
-	})
-	return cands[0].mac, nil
-}
-
-// AllMACs 列出所有候选网卡 MAC，用于换机器时人工挑选。
-func AllMACs() []string {
-	ifaces, _ := net.Interfaces()
-	out := make([]string, 0, len(ifaces))
-	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagLoopback != 0 || len(ifc.HardwareAddr) != 6 {
-			continue
-		}
-		out = append(out, fmt.Sprintf("%s(%s)", strings.ToUpper(ifc.HardwareAddr.String()), ifc.Name))
-	}
-	return out
-}
-
-func isVirtualNIC(name string) bool {
-	n := strings.ToLower(name)
-	for _, kw := range []string{
-		"vmware", "virtualbox", "vbox", "hyper-v", "vethernet", "virtual",
-		"tap", "tun", "docker", "br-", "veth", "wsl", "loopback",
-		"bluetooth", "npcap", "zerotier", "tailscale", "wireguard", "vpn",
-	} {
-		if strings.Contains(n, kw) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasIPv4(ifc net.Interface) bool {
-	addrs, err := ifc.Addrs()
-	if err != nil {
-		return false
-	}
-	for _, a := range addrs {
-		if ipnet, ok := a.(*net.IPNet); ok {
-			if v4 := ipnet.IP.To4(); v4 != nil && !v4.IsLoopback() && !v4.IsLinkLocalUnicast() {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// ========================================
-// 授权码
-// ========================================
-
-// Code 用密钥和机器指纹生成授权码。
-func Code(secret, cpu, mac string) string {
-	msg := normalize(cpu) + "|" + normalize(mac)
-	h := hmac.New(sha256.New, []byte(secret))
-	h.Write([]byte(msg))
-	sum := h.Sum(nil) // 32 字节，取前 10 字节 = 80bit = 16 个 base32 字符
-	raw := encode32(sum[:10])
-	return codePrefix + "-" + raw[0:4] + "-" + raw[4:8] + "-" + raw[8:12] + "-" + raw[12:16]
-}
-
-// Verify 核对授权码是否与本机匹配。
-func Verify(secret, want string) error {
-	if strings.TrimSpace(want) == "" {
-		return errors.New("未配置授权码（main.go 的 licenseCode 为空）")
-	}
-	cpu, mac, err := Fingerprint()
-	if err != nil {
-		return err
-	}
-	got := Code(secret, cpu, mac)
-	if !sameCode(got, want) {
-		return &MismatchError{CPU: cpu, MAC: mac}
+	if l.Expired() {
+		return ErrExpired
 	}
 	return nil
 }
 
-func sameCode(a, b string) bool {
-	a, b = extract(a), extract(b)
-	if len(a) != len(b) || a == "" {
-		return false
-	}
-	// 常量时间比较，避免时序侧信道（象征意义，成本极低）
-	diff := 0
-	for i := 0; i < len(a); i++ {
-		diff |= int(a[i] ^ b[i])
-	}
-	return diff == 0
+func signOf(l *License) string {
+	payload := fmt.Sprintf("%s|%s|%d|%d",
+		strings.ToUpper(strings.TrimSpace(l.Machine)),
+		strings.TrimSpace(l.Customer),
+		l.IssuedAt, l.ExpiresAt,
+	)
+	m := hmac.New(sha256.New, []byte(Secret))
+	m.Write([]byte(payload))
+	return hex.EncodeToString(m.Sum(nil))
 }
 
-// extract 只保留授权码本体（去掉前缀、横线、空格，统一大写）。
-func extract(s string) string {
-	s = strings.ToUpper(strings.TrimSpace(s))
-	s = strings.ReplaceAll(s, "-", "")
-	s = strings.ReplaceAll(s, " ", "")
-	s = strings.TrimPrefix(s, codePrefix)
-	return s
+// ========================================
+// 授权文件读写
+// ========================================
+
+// Load 读授权文件。文件不存在返回 ErrNotFound。
+func Load(path string) (*License, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	var l License
+	if err := json.Unmarshal(b, &l); err != nil {
+		return nil, ErrTampered
+	}
+	return &l, nil
 }
 
-func normalize(s string) string {
-	s = strings.ToUpper(strings.TrimSpace(s))
-	return strings.Join(strings.Fields(s), "")
+// Save 写授权文件（0600，仅本机账号可读）。
+func Save(path string, l *License) error {
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	b, err := json.MarshalIndent(l, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
 }
+
+// ========================================
+// 离线授权码（在线激活不了时的兜底，人工念给客户）
+//   形如 ORDAI1-20271019-9K3M7Q
+// ========================================
+
+const offlinePrefix = "ORDAI1"
+
+// OfflineCode 生成离线授权码：绑定机器码 + 到期日，不含客户名。
+func OfflineCode(machine string, expires time.Time) string {
+	date := expires.Format("20060102")
+	return offlinePrefix + "-" + date + "-" + offlineTag(machine, date)
+}
+
+// ParseOfflineCode 校验离线授权码，返回到期时间。
+func ParseOfflineCode(machine, code string) (time.Time, error) {
+	raw := strings.ToUpper(strings.TrimSpace(code))
+	raw = strings.ReplaceAll(raw, " ", "")
+	raw = strings.ReplaceAll(raw, "－", "-")
+	raw = strings.TrimPrefix(raw, offlinePrefix+"-")
+	raw = strings.TrimPrefix(raw, offlinePrefix)
+	raw = strings.TrimPrefix(raw, "-")
+
+	parts := strings.Split(raw, "-")
+	if len(parts) != 2 {
+		return time.Time{}, errors.New("授权码格式不对，应形如 ORDAI1-20271019-9K3M7Q")
+	}
+	date, tag := parts[0], parts[1]
+	expires, err := time.ParseInLocation("20060102", date, time.Local)
+	if err != nil {
+		return time.Time{}, errors.New("授权码里的日期无效")
+	}
+	if !strings.EqualFold(tag, offlineTag(machine, date)) {
+		return time.Time{}, ErrMachineMismatch
+	}
+	if time.Now().After(expires.Add(24 * time.Hour)) {
+		return time.Time{}, ErrExpired
+	}
+	return expires, nil
+}
+
+func offlineTag(machine, date string) string {
+	m := hmac.New(sha256.New, []byte(Secret))
+	m.Write([]byte(normalize(machine) + "|" + date))
+	return encode32(m.Sum(nil)[:4])[:6]
+}
+
+// ========================================
+// 编码工具
+// ========================================
+
+// Crockford Base32：去掉 I / L / O / U，避免和 1 / 0 看混。
+const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 func encode32(b []byte) string {
 	var sb strings.Builder
@@ -317,48 +198,6 @@ func encode32(b []byte) string {
 	return sb.String()
 }
 
-// ========================================
-// 小工具
-// ========================================
-
-func runCmd(timeout time.Duration, name string, args ...string) (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.SysProcAttr = hiddenWindow()
-	out, err := cmd.Output()
-	if err != nil {
-		return "", false
-	}
-	return string(out), true
-}
-
-// parseKeyValue 兼容 `Key=Value`（wmic /value）与 `Key    Value`（reg query）两种输出。
-func parseKeyValue(out, key string) string {
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if v, ok := strings.CutPrefix(strings.TrimSpace(line), key+"="); ok {
-			if v = strings.TrimSpace(v); v != "" {
-				return v
-			}
-		}
-		if strings.HasPrefix(strings.TrimSpace(line), key) {
-			rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), key))
-			rest = strings.TrimSpace(strings.TrimPrefix(rest, "REG_SZ"))
-			if rest != "" {
-				return rest
-			}
-		}
-	}
-	return ""
-}
-
-func firstNonEmptyLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
-		if line != "" {
-			return line
-		}
-	}
-	return ""
+func sha256sum(s string) [32]byte {
+	return sha256.Sum256([]byte(s))
 }

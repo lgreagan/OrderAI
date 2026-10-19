@@ -46,6 +46,7 @@ var layoutPages = []string{
 
 // standalonePages 是独立完整页面，文件本身就是完整 HTML。
 var standalonePages = []string{
+	"activate.html",
 	"login.html",
 	"order_upload.html",
 	"purchase_order_print.html",
@@ -81,6 +82,15 @@ func Register(
 
 	e.Renderer = NewTemplateRenderer("templates")
 
+	cfg := config.Load()
+
+	// 授权：本地授权文件 + 授权中心地址，都在 .env 里配。
+	licenseService := services.NewLicenseService(cfg.LicenseFile, cfg.LicenseServer)
+
+	// 未激活时整站拦到激活页（除 /activate 与静态资源）。
+	// 放在登录校验之前：客户装好第一眼看到的是激活页，不是登录页。
+	e.Use(middleware.LicenseGate(licenseService))
+
 	// 登录校验：未登录的页面跳登录页、接口返回 401。
 	// 放在最前面，避免未登录请求进入业务逻辑。
 	e.Use(middleware.Auth(authService))
@@ -112,8 +122,6 @@ func Register(
 		"uploads",
 	)
 
-	cfg := config.Load()
-
 	aiController := controllers.NewAIController(
 		cfg,
 	)
@@ -129,6 +137,13 @@ func Register(
 	e.POST("/api/auth/logout", authController.Logout)
 	e.GET("/api/auth/me", authController.Me)
 	e.POST("/api/auth/password", authController.ChangePassword)
+
+	// 激活：独立页面，不套 layout、不需要登录
+	licenseController := controllers.NewLicenseController(licenseService)
+	e.GET("/activate", licenseController.Page)
+	e.GET("/api/license/status", licenseController.Status)
+	e.POST("/api/license/activate", licenseController.Activate)
+	e.POST("/api/license/offline", licenseController.Offline)
 
 	// 首页
 	e.GET("/", func(c echo.Context) error {
