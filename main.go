@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"OrderAI/config"
@@ -67,6 +68,7 @@ func main() {
 	shippingChannelRepo := repository.NewShippingChannelRepository(db)
 	declarationTemplateRepo := repository.NewDeclarationTemplateRepository(db)
 	operationLogRepo := repository.NewOperationLogRepository(db)
+	userRepo := repository.NewUserRepository(db)
 
 	// ========================================
 	// Service
@@ -156,6 +158,17 @@ func main() {
 	warehouseAddressService := services.NewWarehouseAddressService(warehouseAddressRepo)
 	shippingChannelService := services.NewShippingChannelService(shippingChannelRepo)
 	operationLogService := services.NewOperationLogService(operationLogRepo)
+	authService := services.NewAuthService(userRepo)
+
+	// 首次启动没有任何账号时创建管理员，避免装完进不去。
+	if created, err := authService.EnsureDefaultAdmin(context.Background()); err != nil {
+		log.Printf("初始化默认管理员失败: %v", err)
+	} else if created {
+		log.Printf(
+			"已创建默认管理员：%s / %s（请登录后尽快修改密码）",
+			services.DefaultAdminUsername, services.DefaultAdminPassword,
+		)
+	}
 
 	// 退出时把队列里剩余的操作日志落库。
 	defer operationLogService.Close()
@@ -184,6 +197,7 @@ func main() {
 		warehouseAddressService,
 		shippingChannelService,
 		operationLogService,
+		authService,
 	)
 
 	port := cfg.AppPort

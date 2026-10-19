@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - OrderAI</title>
+<style>
+    :root {
+        --ink: #080b16;
+        --brand: #4f6bff;
+        --brand-2: #8b5cf6;
+        --cyan: #22d3ee;
+        --text: #111827;
+        --muted: #6b7280;
+        --line: #e5e7eb;
+        --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; }
+
+    body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100%;
+        padding: 26px;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+        color: #e5e7eb;
+        background: var(--ink);
+        overflow: hidden;
+    }
+
+    /* ---------- 背景：渐变光球 + 细网格 ---------- */
+
+    .bg {
+        position: fixed;
+        inset: 0;
+        background:
+            radial-gradient(1100px 760px at 12% 6%, #1b2a6e 0%, transparent 58%),
+            radial-gradient(880px 680px at 88% 92%, #3b1f63 0%, transparent 62%),
+            linear-gradient(158deg, #070a14 0%, #0b1022 52%, #101327 100%);
+    }
+
+    .orb {
+        position: fixed;
+        border-radius: 50%;
+        filter: blur(90px);
+        opacity: .5;
+        animation: float 20s ease-in-out infinite;
+        pointer-events: none;
+    }
+    .orb.a { width: 420px; height: 420px; background: #3f5bff; top: -130px; left: -90px; }
+    .orb.b { width: 360px; height: 360px; background: #12c7e8; bottom: -150px; left: 34%; animation-delay: -7s; opacity: .35; }
+    .orb.c { width: 480px; height: 480px; background: #a855f7; top: -150px; right: -140px; animation-delay: -12s; }
+
+    @keyframes float {
+        0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+        50% { transform: translate3d(22px, -26px, 0) scale(1.06); }
+    }
+
+    .grid {
+        position: fixed;
+        inset: 0;
+        background-image:
+            linear-gradient(rgba(255, 255, 255, .04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, .04) 1px, transparent 1px);
+        background-size: 58px 58px;
+        -webkit-mask-image: radial-gradient(circle at 50% 42%, #000 0%, transparent 74%);
+        mask-image: radial-gradient(circle at 50% 42%, #000 0%, transparent 74%);
+        pointer-events: none;
+    }
+
+    /* ---------- 卡片外壳 ---------- */
+
+    .shell {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1.02fr .98fr;
+        width: min(1060px, 100%);
+        min-height: 628px;
+        border-radius: 30px;
+        overflow: hidden;
+        background: rgba(11, 15, 30, .66);
+        border: 1px solid rgba(255, 255, 255, .09);
+        box-shadow:
+            0 50px 120px -40px rgba(0, 0, 0, .95),
+            inset 0 1px 0 rgba(255, 255, 255, .07);
+        -webkit-backdrop-filter: blur(22px);
+        backdrop-filter: blur(22px);
+        animation: rise .75s cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    @keyframes rise {
+        from { opacity: 0; transform: translateY(26px) scale(.985); }
+        to { opacity: 1; transform: none; }
+    }
+
+    /* ---------- 左侧品牌区 ---------- */
+
+    .brand {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 46px 44px 38px;
+        overflow: hidden;
+        background:
+            radial-gradient(620px 460px at -8% 112%, rgba(79, 107, 255, .42), transparent 62%),
+            radial-gradient(520px 420px at 108% -10%, rgba(168, 85, 247, .34), transparent 60%),
+            linear-gradient(158deg, rgba(79, 107, 255, .16), rgba(16, 20, 42, .2) 55%, rgba(168, 85, 247, .12));
+    }
+
+    /* 品牌区右下角的装饰圆环 */
+    .brand::after {
+        content: "";
+        position: absolute;
+        right: -120px;
+        bottom: -140px;
+        width: 380px;
+        height: 380px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, .12);
+        box-shadow: 0 0 0 26px rgba(255, 255, 255, .03), 0 0 0 70px rgba(255, 255, 255, .02);
+    }
+
+    .logo-row { display: flex; align-items: center; gap: 12px; }
+
+    .logo-mark {
+        width: 44px;
+        height: 44px;
+        border-radius: 13px;
+        display: grid;
+        place-items: center;
+        font-size: 20px;
+        font-weight: 800;
+        color: #fff;
+        background: linear-gradient(140deg, #5b74ff, #8b5cf6 60%, #22d3ee 130%);
+        box-shadow: 0 10px 26px -8px rgba(91, 116, 255, .9), inset 0 1px 0 rgba(255, 255, 255, .4);
+        letter-spacing: -.5px;
+    }
+
+    .logo-name { font-size: 16px; font-weight: 700; letter-spacing: .2px; }
+    .logo-sub { font-size: 11.5px; color: rgba(229, 231, 235, .55); margin-top: 2px; letter-spacing: .6px; text-transform: uppercase; }
+
+    .brand-main { position: relative; z-index: 1; }
+
+    .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        margin-bottom: 20px;
+        font-size: 11.5px;
+        letter-spacing: .8px;
+        color: rgba(226, 232, 240, .82);
+        border: 1px solid rgba(255, 255, 255, .14);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .05);
+    }
+    .eyebrow i {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: #34d399;
+        box-shadow: 0 0 0 4px rgba(52, 211, 153, .16);
+    }
+
+    .brand-title {
+        font-size: clamp(28px, 3.2vw, 38px);
+        line-height: 1.18;
+        font-weight: 750;
+        letter-spacing: -.6px;
+        margin-bottom: 14px;
+    }
+    .brand-title span {
+        background: linear-gradient(96deg, #9db2ff 0%, #c4b5fd 46%, #67e8f9 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    .brand-desc {
+        max-width: 360px;
+        font-size: 13.5px;
+        line-height: 1.72;
+        color: rgba(226, 232, 240, .62);
+    }
+
+    .feats {
+        list-style: none;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 30px;
+    }
+
+    .feats li {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        color: rgba(226, 232, 240, .84);
+        border: 1px solid rgba(255, 255, 255, .08);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, .035);
+    }
+
+    .feats .dot {
+        flex: 0 0 auto;
+        width: 24px; height: 24px;
+        display: grid; place-items: center;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, .08);
+        font-size: 12px;
+    }
+
+    .brand-foot {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11.5px;
+        color: rgba(226, 232, 240, .42);
+        letter-spacing: .2px;
+    }
+
+    /* ---------- 右侧登录卡 ---------- */
+
+    .panel {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 52px 46px;
+        color: var(--text);
+        background:
+            radial-gradient(520px 320px at 110% -10%, rgba(79, 107, 255, .07), transparent 62%),
+            radial-gradient(420px 300px at -10% 110%, rgba(139, 92, 246, .06), transparent 60%),
+            #fff;
+    }
+
+    .panel-eyebrow {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1.6px;
+        color: #8b93a7;
+        margin-bottom: 10px;
+    }
+
+    .panel h1 {
+        font-size: 25px;
+        font-weight: 750;
+        letter-spacing: -.4px;
+        margin-bottom: 8px;
+    }
+
+    .panel .lead {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 26px;
+    }
+
+    .field { margin-bottom: 15px; }
+
+    .field label {
+        display: block;
+        margin-bottom: 7px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .control { position: relative; }
+
+    .control .icon {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 18px;
+        height: 18px;
+        color: #9aa3b5;
+        pointer-events: none;
+        transition: color .18s ease;
+    }
+
+    .control input {
+        width: 100%;
+        height: 48px;
+        padding: 0 14px 0 42px;
+        font-size: 14px;
+        color: var(--text);
+        background: #f6f7fb;
+        border: 1.5px solid #e8eaf2;
+        border-radius: 13px;
+        outline: none;
+        transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+
+    .control input::placeholder { color: #aab1c2; }
+
+    .control input:hover { background: #f2f4fa; }
+
+    .control input:focus {
+        background: #fff;
+        border-color: var(--brand);
+        box-shadow: 0 0 0 4px rgba(79, 107, 255, .13);
+    }
+
+    .control input:focus ~ .icon { color: var(--brand); }
+
+    .control.has-eye input { padding-right: 46px; }
+
+    .eye {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: #9aa3b5;
+        cursor: pointer;
+        transition: background .16s ease, color .16s ease;
+    }
+    .eye:hover { background: #eef1f9; color: #4b5563; }
+    .eye svg { width: 18px; height: 18px; }
+
+    .row-between {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 4px 0 20px;
+    }
+
+    .check {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12.5px;
+        color: #4b5563;
+        cursor: pointer;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+
+    .check input { position: absolute; opacity: 0; pointer-events: none; }
+
+    .check .box {
+        width: 17px;
+        height: 17px;
+        border-radius: 5px;
+        border: 1.5px solid #cfd5e3;
+        background: #fff;
+        display: grid;
+        place-items: center;
+        transition: background .16s ease, border-color .16s ease;
+    }
+
+    .check .box::after {
+        content: "";
+        width: 9px;
+        height: 5px;
+        border-left: 2px solid #fff;
+        border-bottom: 2px solid #fff;
+        transform: rotate(-45deg) translateY(-1px);
+        opacity: 0;
+        transition: opacity .14s ease;
+    }
+
+    .check input:checked + .box {
+        background: linear-gradient(140deg, #5b74ff, #7c5cf6);
+        border-color: transparent;
+    }
+    .check input:checked + .box::after { opacity: 1; }
+    .check input:focus-visible + .box { box-shadow: 0 0 0 4px rgba(79, 107, 255, .16); }
+
+    .hint-link {
+        font-size: 12.5px;
+        color: #8b93a7;
+    }
+
+    .submit {
+        position: relative;
+        width: 100%;
+        height: 50px;
+        border: 0;
+        border-radius: 13px;
+        font-size: 14.5px;
+        font-weight: 650;
+        letter-spacing: .3px;
+        color: #fff;
+        cursor: pointer;
+        overflow: hidden;
+        background: linear-gradient(120deg, #4f6bff 0%, #6d5cf6 52%, #8b5cf6 100%);
+        box-shadow: 0 16px 34px -14px rgba(79, 107, 255, .85), inset 0 1px 0 rgba(255, 255, 255, .24);
+        transition: transform .16s ease, box-shadow .2s ease, filter .2s ease;
+    }
+
+    .submit::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -60%;
+        width: 42%;
+        height: 100%;
+        background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .35), transparent);
+        transform: skewX(-18deg);
+        transition: left .55s ease;
+    }
+
+    .submit:hover { transform: translateY(-1.5px); filter: saturate(1.05); }
+    .submit:hover::after { left: 118%; }
+    .submit:active { transform: translateY(0) scale(.995); }
+    .submit:disabled { cursor: default; filter: grayscale(.15) brightness(.96); transform: none; }
+
+    .alert {
+        display: none;
+        align-items: flex-start;
+        gap: 9px;
+        margin-bottom: 16px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: #b91c1c;
+        background: #fff1f2;
+        border: 1px solid #fecdd3;
+        border-radius: 11px;
+    }
+    .alert.show { display: flex; animation: shake .38s cubic-bezier(.36, .07, .19, .97) both; }
+    .alert svg { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 1px; }
+
+    @keyframes shake {
+        10%, 90% { transform: translateX(-2px); }
+        20%, 80% { transform: translateX(3px); }
+        30%, 50%, 70% { transform: translateX(-5px); }
+        40%, 60% { transform: translateX(5px); }
+    }
+
+    .panel-foot {
+        margin-top: 22px;
+        font-size: 11.5px;
+        color: #9aa3b5;
+        text-align: center;
+        line-height: 1.7;
+    }
+
+    .panel-foot b { color: #6b7280; font-weight: 600; }
+
+    @media (max-width: 900px) {
+        body { padding: 16px; overflow: auto; }
+        .shell { grid-template-columns: 1fr; min-height: auto; border-radius: 24px; }
+        .brand { display: none; }
+        .panel { padding: 40px 26px 32px; }
+    }
+
+    @media (max-width: 380px) {
+        .panel { padding: 32px 18px 26px; }
+    }
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+<div class="orb a"></div>
+<div class="orb b"></div>
+<div class="orb c"></div>
+<div class="grid"></div>
+
+<div class="shell">
+
+    <!-- 左侧：品牌与卖点 -->
+    <section class="brand">
+        <div class="logo-row">
+            <div class="logo-mark">O</div>
+            <div>
+                <div class="logo-name">OrderAI</div>
+                <div class="logo-sub">Order Management</div>
+            </div>
+        </div>
+
+        <div class="brand-main">
+            <div class="eyebrow"><i></i> 外贸订单中台</div>
+            <h2 class="brand-title">从一纸订单<br>到<span>发货收款</span>，一次跑通</h2>
+            <p class="brand-desc">
+                识别订单、匹配 SKU、采购包材、生产发货、报关结汇，
+                全部数据连在一起，不用再对十几张表。
+            </p>
+
+            <ul class="feats">
+                <li><span class="dot">识</span> 订单智能识别</li>
+                <li><span class="dot">采</span> 采购与包材</li>
+                <li><span class="dot">发</span> 发货与报关</li>
+                <li><span class="dot">财</span> 财务与利润</li>
+            </ul>
+        </div>
+
+        <div class="brand-foot">
+            <span>© 2026 OrderAI</span>
+            <span>v1.0.0</span>
+        </div>
+    </section>
+
+    <!-- 右侧：登录表单 -->
+    <section class="panel">
+        <div class="panel-eyebrow">WELCOME BACK</div>
+        <h1>登录你的工作台</h1>
+        <p class="lead">用公司分配的账号继续今天的订单工作。</p>
+
+        <div class="alert" id="alertBox">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 8v5M12 16.5v.01" stroke-linecap="round"></path>
+            </svg>
+            <span id="alertText">用户名或密码不正确</span>
+        </div>
+
+        <form id="loginForm" autocomplete="on" novalidate>
+            <div class="field">
+                <label for="username">账号</label>
+                <div class="control">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <circle cx="12" cy="8" r="3.4"></circle>
+                        <path d="M4.8 20c.6-3.6 3.6-5.6 7.2-5.6s6.6 2 7.2 5.6" stroke-linecap="round"></path>
+                    </svg>
+                    <input id="username" name="username" type="text" placeholder="请输入账号"
+                           autocomplete="username" spellcheck="false" autofocus>
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="password">密码</label>
+                <div class="control has-eye">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <rect x="4.5" y="10" width="15" height="10" rx="2.6"></rect>
+                        <path d="M8 10V7.6a4 4 0 0 1 8 0V10" stroke-linecap="round"></path>
+                    </svg>
+                    <input id="password" name="password" type="password" placeholder="请输入密码"
+                           autocomplete="current-password">
+                    <button class="eye" type="button" id="eyeBtn" title="显示密码" aria-label="显示密码">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path d="M2.5 12s3.6-6.2 9.5-6.2S21.5 12 21.5 12s-3.6 6.2-9.5 6.2S2.5 12 2.5 12Z"></path>
+                            <circle cx="12" cy="12" r="2.8"></circle>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="row-between">
+                <label class="check">
+                    <input type="checkbox" id="remember">
+                    <span class="box"></span>
+                    记住我 7 天
+                </label>
+                <span class="hint-link">忘记密码？联系管理员</span>
+            </div>
+
+            <button class="submit" type="submit" id="submitBtn">登 录</button>
+        </form>
+
+        <div class="panel-foot">
+            首次使用请用管理员账号登录，并在右上角菜单修改密码。<br>
+            <b>OrderAI</b> · 外贸订单智能管理系统
+        </div>
+    </section>
+
+</div>
+
+<script>
+    var NEXT = {{printf "%q" .next}};
+
+    (function () {
+        var form = document.getElementById('loginForm');
+        var alertBox = document.getElementById('alertBox');
+        var alertText = document.getElementById('alertText');
+        var btn = document.getElementById('submitBtn');
+        var username = document.getElementById('username');
+        var password = document.getElementById('password');
+        var remember = document.getElementById('remember');
+        var eyeBtn = document.getElementById('eyeBtn');
+
+        function showError(msg) {
+            alertText.textContent = msg;
+            alertBox.classList.remove('show');
+            void alertBox.offsetWidth; // 重新触发抖动动画
+            alertBox.classList.add('show');
+        }
+
+        function clearError() {
+            alertBox.classList.remove('show');
+        }
+
+        eyeBtn.addEventListener('click', function () {
+            var visible = password.type === 'text';
+            password.type = visible ? 'password' : 'text';
+            eyeBtn.title = visible ? '显示密码' : '隐藏密码';
+            password.focus();
+        });
+
+        [username, password].forEach(function (el) {
+            el.addEventListener('input', clearError);
+        });
+
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            clearError();
+
+            var u = username.value.trim();
+            var p = password.value;
+            if (!u) { showError('请输入账号'); username.focus(); return; }
+            if (!p) { showError('请输入密码'); password.focus(); return; }
+
+            btn.disabled = true;
+            btn.textContent = '登录中...';
+
+            try {
+                var res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p, remember: remember.checked })
+                });
+                var json = await res.json().catch(function () { return {}; });
+
+                if (!res.ok || !json.success) {
+                    showError(json.message || '登录失败，请稍后重试');
+                    btn.disabled = false;
+                    btn.textContent = '登 录';
+                    password.select();
+                    return;
+                }
+
+                btn.textContent = '登录成功，正在进入...';
+                location.href = NEXT || '/';
+            } catch (err) {
+                showError('网络异常，请检查服务是否正常运行');
+                btn.disabled = false;
+                btn.textContent = '登 录';
+            }
+        });
+    })();
+</script>
+
+</body>
+</html>

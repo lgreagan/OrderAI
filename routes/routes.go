@@ -11,6 +11,7 @@ import (
 	"OrderAI/config"
 	"OrderAI/controllers"
 	"OrderAI/middleware"
+	"OrderAI/models"
 	"OrderAI/services"
 
 	"github.com/labstack/echo/v4"
@@ -44,6 +45,7 @@ var layoutPages = []string{
 
 // standalonePages 是独立完整页面，文件本身就是完整 HTML。
 var standalonePages = []string{
+	"login.html",
 	"order_upload.html",
 	"purchase_order_print.html",
 	"production_order_print.html",
@@ -72,9 +74,14 @@ func Register(
 	warehouseAddressService *services.WarehouseAddressService,
 	shippingChannelService *services.ShippingChannelService,
 	operationLogService *services.OperationLogService,
+	authService *services.AuthService,
 ) {
 
 	e.Renderer = NewTemplateRenderer("templates")
+
+	// 登录校验：未登录的页面跳登录页、接口返回 401。
+	// 放在最前面，避免未登录请求进入业务逻辑。
+	e.Use(middleware.Auth(authService))
 
 	// 关键操作日志：记录改动业务数据的接口调用，供事后追溯。
 	e.Use(middleware.OperationLog(operationLogService))
@@ -112,6 +119,14 @@ func Register(
 	orderController := controllers.NewOrderController(
 		orderService,
 	)
+
+	// 登录 / 退出 / 当前账号
+	authController := controllers.NewAuthController(authService)
+	e.GET("/login", authController.LoginPage)
+	e.POST("/api/auth/login", authController.Login)
+	e.POST("/api/auth/logout", authController.Logout)
+	e.GET("/api/auth/me", authController.Me)
+	e.POST("/api/auth/password", authController.ChangePassword)
 
 	// 首页
 	e.GET("/", func(c echo.Context) error {
@@ -580,6 +595,25 @@ func NewTemplateRenderer(dir string) *TemplateRenderer {
 	}
 }
 
+// withCurrentUser 把登录账号补进页面数据，layout 的侧边栏与改密弹窗都靠它。
+func withCurrentUser(data interface{}, c echo.Context) interface{} {
+	if c == nil {
+		return data
+	}
+	m, ok := data.(map[string]interface{})
+	if !ok {
+		if m2, ok2 := data.(map[string]any); ok2 {
+			m = m2
+		} else {
+			return data
+		}
+	}
+	if u, ok := c.Get(middleware.ContextUserKey).(*models.User); ok && u != nil {
+		m["current_user"] = u
+	}
+	return m
+}
+
 func (t *TemplateRenderer) Render(
 	w io.Writer,
 	name string,
@@ -591,7 +625,7 @@ func (t *TemplateRenderer) Render(
 		return page.ExecuteTemplate(
 			w,
 			"layout",
-			data,
+			withCurrentUser(data, c),
 		)
 	}
 
@@ -600,4 +634,4 @@ func (t *TemplateRenderer) Render(
 		name,
 		data,
 	)
-}
+}

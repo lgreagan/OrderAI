@@ -292,20 +292,20 @@
 
                 <!-- 用户 -->
 
-                <div class="user-menu">
+                <div class="user-menu" id="userMenu">
 
                     <div class="user-avatar">
-                        管
+                        {{with .current_user}}{{.Initial}}{{else}}管{{end}}
                     </div>
 
                     <div class="user-info">
 
                         <div class="user-name">
-                            管理员
+                            {{with .current_user}}{{.Name}}{{else}}未登录{{end}}
                         </div>
 
                         <div class="user-role">
-                            Administrator
+                            {{with .current_user}}{{if .IsAdmin}}Administrator{{else}}Staff{{end}}{{else}}—{{end}}
                         </div>
 
                     </div>
@@ -313,6 +313,25 @@
                     <span class="user-arrow">
                         ▾
                     </span>
+
+                    <!-- 下拉菜单 -->
+
+                    <div class="user-dropdown">
+
+                        <div class="user-dropdown-head">
+                            <b>{{with .current_user}}{{.Username}}{{else}}—{{end}}</b>
+                            <span>{{with .current_user}}{{if .IsAdmin}}管理员{{else}}业务员{{end}}{{else}}—{{end}}</span>
+                        </div>
+
+                        <button type="button" class="user-dropdown-item" id="changePwdBtn">
+                            修改密码
+                        </button>
+
+                        <button type="button" class="user-dropdown-item danger" id="logoutBtn">
+                            退出登录
+                        </button>
+
+                    </div>
 
                 </div>
 
@@ -349,8 +368,145 @@
 </div>
 
 
+<!-- 修改密码弹窗 -->
+
+<div class="pwd-mask" id="pwdMask">
+
+    <div class="pwd-modal" role="dialog" aria-modal="true" aria-labelledby="pwdTitle">
+
+        <h3 id="pwdTitle">修改密码</h3>
+
+        <p class="pwd-tip">
+            改完其它设备上的登录会失效，当前这台保持在线。
+        </p>
+
+        <label class="pwd-field">
+            <span>原密码</span>
+            <input type="password" id="pwdOld" autocomplete="current-password">
+        </label>
+
+        <label class="pwd-field">
+            <span>新密码（至少 6 位）</span>
+            <input type="password" id="pwdNew" autocomplete="new-password">
+        </label>
+
+        <label class="pwd-field">
+            <span>确认新密码</span>
+            <input type="password" id="pwdNew2" autocomplete="new-password">
+        </label>
+
+        <div class="pwd-msg" id="pwdMsg"></div>
+
+        <div class="pwd-actions">
+            <button type="button" class="pwd-btn plain" id="pwdCancel">取消</button>
+            <button type="button" class="pwd-btn solid" id="pwdSave">保存</button>
+        </div>
+
+    </div>
+
+</div>
+
+
 <script
     src="/web/js/app.js">
+</script>
+
+<script>
+    (function () {
+        var menu = document.getElementById('userMenu');
+        var mask = document.getElementById('pwdMask');
+        var msg = document.getElementById('pwdMsg');
+        var oldPwd = document.getElementById('pwdOld');
+        var newPwd = document.getElementById('pwdNew');
+        var newPwd2 = document.getElementById('pwdNew2');
+        var saveBtn = document.getElementById('pwdSave');
+
+        if (menu) {
+            menu.addEventListener('click', function (e) {
+                if (e.target.closest('.user-dropdown')) return;
+                menu.classList.toggle('open');
+            });
+            document.addEventListener('click', function (e) {
+                if (menu && !menu.contains(e.target)) menu.classList.remove('open');
+            });
+        }
+
+        function setMsg(text, ok) {
+            msg.textContent = text || '';
+            msg.className = 'pwd-msg' + (text ? (ok ? ' ok' : ' bad') : '');
+        }
+
+        function closeModal() {
+            mask.classList.remove('open');
+            oldPwd.value = newPwd.value = newPwd2.value = '';
+            setMsg('', true);
+        }
+
+        var openBtn = document.getElementById('changePwdBtn');
+        if (openBtn) {
+            openBtn.addEventListener('click', function () {
+                menu.classList.remove('open');
+                mask.classList.add('open');
+                setMsg('', true);
+                setTimeout(function () { oldPwd.focus(); }, 60);
+            });
+        }
+
+        document.getElementById('pwdCancel').addEventListener('click', closeModal);
+
+        mask.addEventListener('click', function (e) {
+            if (e.target === mask) closeModal();
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && mask.classList.contains('open')) closeModal();
+        });
+
+        saveBtn.addEventListener('click', async function () {
+            setMsg('', true);
+
+            if (!oldPwd.value) { setMsg('请输入原密码'); oldPwd.focus(); return; }
+            if (newPwd.value.length < 6) { setMsg('新密码至少 6 位'); newPwd.focus(); return; }
+            if (newPwd.value !== newPwd2.value) { setMsg('两次输入的新密码不一致'); newPwd2.focus(); return; }
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = '保存中...';
+            try {
+                var res = await fetch('/api/auth/password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        old_password: oldPwd.value,
+                        new_password: newPwd.value
+                    })
+                });
+                var json = await res.json().catch(function () { return {}; });
+                if (!res.ok || !json.success) {
+                    setMsg(json.message || '修改失败');
+                    return;
+                }
+                setMsg('密码已更新', true);
+                oldPwd.value = newPwd.value = newPwd2.value = '';
+                setTimeout(closeModal, 1200);
+            } catch (err) {
+                setMsg('网络异常，请稍后重试');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = '保存';
+            }
+        });
+
+        var logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async function () {
+                logoutBtn.textContent = '退出中...';
+                try {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                } catch (err) { /* 网络不通也照样回登录页 */ }
+                location.href = '/login';
+            });
+        }
+    })();
 </script>
 
 </body>
