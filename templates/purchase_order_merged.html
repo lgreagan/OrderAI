@@ -377,6 +377,22 @@
             + '<td class="num" data-role="qty">0</td><td></td>'
             + '<td class="num" data-role="amount">0.00</td><td></td></tr></tfoot>'
             + '</table>'
+            // 按规格统计：纸箱按规格合并（不分材料名），直接拿去和纸箱厂对数量。
+            + '<div class="list-head"><h3>纸箱按规格统计</h3>'
+            + '<div class="list-tools"><span class="hint">同一规格合并计算，随上方隐藏行一起变化</span></div></div>'
+            + '<table id="mergeSpec">'
+            + '<thead><tr>'
+            + '<th class="ctr" style="width:44px">序号</th>'
+            + '<th>规格</th>'
+            + '<th class="num" style="width:96px">用量合计</th>'
+            + '<th class="num" style="width:80px">单价</th>'
+            + '<th class="num" style="width:110px">金额合计</th>'
+            + '<th class="num" style="width:90px">单据数</th>'
+            + '</tr></thead><tbody></tbody>'
+            + '<tfoot><tr class="total"><td colspan="2">合计</td>'
+            + '<td class="num" data-role="qty">0</td><td></td>'
+            + '<td class="num" data-role="amount">0.00</td><td></td></tr></tfoot>'
+            + '</table>'
             + '</section>'
             + '<div class="note">合并口径：同一 SKU（产品）/ 同一规格（材料）跨单合并，'
             + '单价不一致时显示区间；合计只统计当前可见行。</div>'
@@ -554,6 +570,68 @@
         return { key: label, label: label };
     }
 
+    // 纸箱按规格统计：把材料行只按「规格 + 币种」归并，跨材料名累加数量与金额；
+    // 只统计 mergeMaterial 里当前可见的行，隐藏行的数字不会漏进这张表。
+    function renderSpecSummary(materials) {
+        var table = document.getElementById('mergeSpec');
+        if (!table) return;
+
+        var body = table.querySelector('tbody');
+        var hiddenBag = hiddenMerge['mergeMaterial'] || {};
+        var groups = {}, keys = [];
+
+        materials.forEach(function (g) {
+            if (hiddenBag[g.key]) return;
+            var spec = String(g.spec || '').trim();
+            var currency = g.currency || '';
+            var key = spec + '|' + currency;
+            var s = groups[key];
+            if (!s) {
+                s = { key: key, spec: spec, currency: currency, qty: 0, amount: 0, prices: {}, pos: {} };
+                groups[key] = s;
+                keys.push(key);
+            }
+            s.qty += g.qty;
+            s.amount += g.amount;
+            Object.keys(g.prices || {}).forEach(function (p) { s.prices[p] = true; });
+            Object.keys(g.pos || {}).forEach(function (p) { s.pos[p] = true; });
+        });
+
+        // 规格按字符串升序（35×30×30 → 40×40×25 → 46×31×42 这样够用），没填规格的排最后。
+        keys.sort(function (a, b) {
+            var ga = groups[a], gb = groups[b];
+            if (!ga.spec && !gb.spec) return 0;
+            if (!ga.spec) return 1;
+            if (!gb.spec) return -1;
+            if (ga.spec !== gb.spec) return ga.spec < gb.spec ? -1 : 1;
+            return ga.currency < gb.currency ? -1 : (ga.currency > gb.currency ? 1 : 0);
+        });
+
+        var totalQty = 0, totalAmount = 0;
+        body.innerHTML = keys.map(function (key, i) {
+            var s = groups[key];
+            totalQty += s.qty;
+            totalAmount += s.amount;
+            return '<tr>'
+                + '<td class="ctr">' + (i + 1) + '</td>'
+                + '<td class="cell-name">' + (s.spec ? esc(s.spec) : '<span class="hint">未填规格</span>') + '</td>'
+                + '<td class="num">' + qty(s.qty) + '</td>'
+                + priceCell(s)
+                + '<td class="num">' + money(s.amount) + '</td>'
+                + '<td class="num">' + Object.keys(s.pos).length + '</td>'
+                + '</tr>';
+        }).join('');
+
+        if (!keys.length) {
+            body.innerHTML = '<tr><td colspan="6" class="empty">暂无数据</td></tr>';
+        }
+
+        var qtyEl = table.querySelector('[data-role="qty"]');
+        if (qtyEl) qtyEl.textContent = qty(totalQty);
+        var amountEl = table.querySelector('[data-role="amount"]');
+        if (amountEl) amountEl.textContent = money(totalAmount);
+    }
+
     function renderMergedSummary() {
         var products = collectRows('product', function (row) {
             return (row.sku || 0) + '|' + (row.name || '') + '|' + (row.currency || '');
@@ -593,6 +671,9 @@
             function (g) { return '<td class="cell-name">' + esc(g.name) + '</td>'; },
             function (g) { return '<td>' + esc(g.spec) + '</td>'; }
         ], 'qty', 'amount');
+
+        // 纸箱按规格统计跟着材料表的可见行走。
+        renderSpecSummary(materials);
 
         // 下单文案跟着合并清单走：隐藏掉的行不算，跨单数量已经合并好。
         renderOrderText(products);
